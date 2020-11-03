@@ -283,6 +283,9 @@ TEST(DOMRoot, FrameSemanticsOnCopyAndMove)
     errors = root2.LoadSdfString(sdfString2);
     EXPECT_TRUE(errors.empty()) << errors;
 
+    testFrame1(root1);
+    testFrame2(root2);
+
     // root1 is copied into root2 via the assignment operator
     root2 = root1;
     testFrame1(root1);
@@ -306,6 +309,9 @@ TEST(DOMRoot, FrameSemanticsOnCopyAndMove)
     sdf::Root root2;
     errors = root2.LoadSdfString(sdfString2);
     EXPECT_TRUE(errors.empty()) << errors;
+
+    testFrame1(root1);
+    testFrame2(root2);
 
     // root1 is moved into root2 via the move assignment operator.
     root2 = std::move(root1);
