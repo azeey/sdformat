@@ -91,7 +91,7 @@ sdf::ScopedGraph<FrameAttachedToGraph> addFrameAttachedToGraph(
 
 /////////////////////////////////////////////////
 template <typename T>
-ScopedGraph<PoseRelativeToGraph> addPoseRealtiveToGraph(
+ScopedGraph<PoseRelativeToGraph> addPoseRelativeToGraph(
     std::vector<sdf::ScopedGraph<sdf::PoseRelativeToGraph>> &_graphList,
     const T &_domObj, Errors &_errors)
 {
@@ -260,7 +260,7 @@ Errors Root::Load(SDFPtr _sdf)
           this->dataPtr->worldFrameAttachedToGraphs, world, worldErrors);
       world.SetFrameAttachedToGraph(frameAttachedToGraph);
 
-      auto poseRelativeToGraph = addPoseRealtiveToGraph(
+      auto poseRelativeToGraph = addPoseRelativeToGraph(
           this->dataPtr->worldPoseRelativeToGraphs, world, worldErrors);
       world.SetPoseRelativeToGraph(poseRelativeToGraph);
 
@@ -301,7 +301,7 @@ Errors Root::Load(SDFPtr _sdf)
 
     model.SetFrameAttachedToGraph(frameAttachedToGraph);
 
-    auto poseRelativeToGraph = addPoseRealtiveToGraph(
+    auto poseRelativeToGraph = addPoseRelativeToGraph(
         this->dataPtr->modelPoseRelativeToGraphs, model, errors);
     model.SetPoseRelativeToGraph(poseRelativeToGraph);
   }
