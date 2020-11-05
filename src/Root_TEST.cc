@@ -59,33 +59,12 @@ TEST(DOMRoot, Construction)
 }
 
 /////////////////////////////////////////////////
-TEST(DOMRoot, CopyConstructor)
-{
-  sdf::Root root;
-  root.SetVersion("test_root");
-
-  sdf::Root root2(root);
-  EXPECT_EQ("test_root", root2.Version());
-}
-
-/////////////////////////////////////////////////
-TEST(DOMRoot, CopyAssignmentOperator)
-{
-  sdf::Root root;
-  root.SetVersion("test_root");
-
-  sdf::Root root2;
-  root2 = root;
-  EXPECT_EQ("test_root", root2.Version());
-}
-
-/////////////////////////////////////////////////
 TEST(DOMRoot, MoveConstructor)
 {
   sdf::Root root;
   root.SetVersion("test_root");
 
-  sdf::Root root2(root);
+  sdf::Root root2(std::move(root));
   EXPECT_EQ("test_root", root2.Version());
 }
 
@@ -98,25 +77,6 @@ TEST(DOMRoot, MoveAssignmentOperator)
   sdf::Root root2;
   root2 = std::move(root);
   EXPECT_EQ("test_root", root2.Version());
-}
-
-/////////////////////////////////////////////////
-TEST(DOMRoot, CopyAssignmentAfterMove)
-{
-  sdf::Root root1;
-  root1.SetVersion("root1");
-
-  sdf::Root root2;
-  root2.SetVersion("root2");
-
-  // This is similar to what std::swap does except it uses std::move for each
-  // assignment
-  sdf::Root tmp = std::move(root1);
-  root1 = root2;
-  root2 = tmp;
-
-  EXPECT_EQ("root2", root1.Version());
-  EXPECT_EQ("root1", root2.Version());
 }
 
 /////////////////////////////////////////////////
@@ -205,7 +165,7 @@ TEST(DOMRoot, Set)
 }
 
 /////////////////////////////////////////////////
-TEST(DOMRoot, FrameSemanticsOnCopyAndMove)
+TEST(DOMRoot, FrameSemanticsOnMove)
 {
   const std::string sdfString1 = R"(
     <sdf version="1.8">
@@ -263,33 +223,6 @@ TEST(DOMRoot, FrameSemanticsOnCopyAndMove)
     sdf::Errors errors = root2.LoadSdfString(sdfString2);
     EXPECT_TRUE(errors.empty()) << errors;
     testFrame2(root2);
-  }
-
-  {
-    sdf::Root root1;
-    sdf::Errors errors = root1.LoadSdfString(sdfString1);
-    EXPECT_TRUE(errors.empty()) << errors;
-    // root2 is copy constructed from root1
-    sdf::Root root2(root1);
-    testFrame1(root1);
-    testFrame1(root2);
-  }
-
-  {
-    sdf::Root root1;
-    sdf::Errors errors = root1.LoadSdfString(sdfString1);
-    EXPECT_TRUE(errors.empty()) << errors;
-    sdf::Root root2;
-    errors = root2.LoadSdfString(sdfString2);
-    EXPECT_TRUE(errors.empty()) << errors;
-
-    testFrame1(root1);
-    testFrame2(root2);
-
-    // root1 is copied into root2 via the assignment operator
-    root2 = root1;
-    testFrame1(root1);
-    testFrame1(root2);
   }
 
   {

@@ -114,44 +114,9 @@ Root::Root()
 }
 
 /////////////////////////////////////////////////
-Root::Root(const Root &_root)
-  : dataPtr(new RootPrivate(*_root.dataPtr))
-{
-  // TODO(addisu) Do we need to make deep copies of the graphs?
-  //
-  // By construction the sizes of the worlds vector, the
-  // worldFrameAttachedToGraphs vector and the worldPoseRelativeToGraphs vector
-  // should be the same.
-  for (std::size_t i = 0; i < this->dataPtr->worlds.size(); ++i)
-  {
-    this->dataPtr->worlds[i].SetFrameAttachedToGraph(
-        this->dataPtr->worldFrameAttachedToGraphs[i]);
-    this->dataPtr->worlds[i].SetPoseRelativeToGraph(
-        this->dataPtr->worldPoseRelativeToGraphs[i]);
-  }
-
-  // By construction the sizes of the models vector, the
-  // modelFrameAttachedToGraphs vector and the modelPoseRelativeToGraphs vector
-  // should be the same.
-  for (std::size_t i = 0; i < this->dataPtr->models.size(); ++i)
-  {
-    this->dataPtr->models[i].SetFrameAttachedToGraph(
-        this->dataPtr->modelFrameAttachedToGraphs[i]);
-    this->dataPtr->models[i].SetPoseRelativeToGraph(
-        this->dataPtr->modelPoseRelativeToGraphs[i]);
-  }
-}
-
-/////////////////////////////////////////////////
 Root::Root(Root &&_root) noexcept
   : dataPtr(std::exchange(_root.dataPtr, nullptr))
 {
-}
-
-/////////////////////////////////////////////////
-Root &Root::operator=(const Root &_root)
-{
-  return *this = Root(_root);
 }
 
 /////////////////////////////////////////////////
