@@ -15,6 +15,9 @@
  *
 */
 
+#include <memory>
+#include "vendor/backward.hpp"
+
 #include "sdf/Error.hh"
 
 using namespace sdf;
@@ -35,6 +38,8 @@ class sdf::Error::Implementation
 
   /// \brief Line number in the file path where the error was raised.
   public: std::optional<int> lineNumber = std::nullopt;
+
+  public: std::shared_ptr<backward::StackTrace> st;
 };
 
 /////////////////////////////////////////////////
@@ -48,26 +53,36 @@ Error::Error(const ErrorCode _code, const std::string &_message)
 {
   this->dataPtr->code = _code;
   this->dataPtr->message = _message;
+  this->dataPtr->st = std::make_shared<backward::StackTrace>();
+  this->dataPtr->st->load_here(10);
+  this->dataPtr->st->skip_n_firsts(3);
+}
+std::string Error::Trace() const
+{
+  if (this->dataPtr->st)
+  {
+    std::stringstream ss;
+    backward::Printer p;
+    p.color_mode = backward::ColorMode::always;
+    p.print(*this->dataPtr->st, ss);
+    return ss.str();
+  }
+  return "";
 }
 
 /////////////////////////////////////////////////
 Error::Error(const ErrorCode _code, const std::string &_message,
              const std::string &_filePath)
-  : dataPtr(ignition::utils::MakeImpl<Implementation>())
+  : Error(_code, _message)
 {
-  this->dataPtr->code = _code;
-  this->dataPtr->message = _message;
   this->dataPtr->filePath = _filePath;
 }
 
 /////////////////////////////////////////////////
 Error::Error(const ErrorCode _code, const std::string &_message,
              const std::string &_filePath, int _lineNumber)
-  : dataPtr(ignition::utils::MakeImpl<Implementation>())
+  : Error(_code, _message, _filePath)
 {
-  this->dataPtr->code = _code;
-  this->dataPtr->message = _message;
-  this->dataPtr->filePath = _filePath;
   this->dataPtr->lineNumber = _lineNumber;
 }
 

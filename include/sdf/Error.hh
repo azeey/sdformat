@@ -203,6 +203,7 @@ namespace sdf
     /// \sa Element::SetXmlPath
     public: void SetXmlPath(const std::string &_xmlPath);
 
+    public: std::string Trace() const;
     /// \brief Safe bool conversion.
     /// \return True if this Error's Code() != NONE. In otherwords, this is
     /// true when there is an error.
@@ -242,7 +243,8 @@ namespace sdf
           << static_cast<std::underlying_type<sdf::ErrorCode>::type>(
               _err.Code()) << ": "
           << pathInfo
-          << "Msg: " << _err.Message();
+          << "Msg: " << _err.Message() << "\n"
+          << _err.Trace();
       return _out;
     }
 

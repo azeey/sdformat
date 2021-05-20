@@ -114,6 +114,9 @@ set (sdf_cmake_dir ${PROJECT_SOURCE_DIR}/cmake CACHE PATH
 message (STATUS "\n\n====== Finding 3rd Party Packages ======")
 include (${sdf_cmake_dir}/SDFUtils.cmake)
 include (${sdf_cmake_dir}/SearchForStuff.cmake)
+
+# Find prerequistes for backward
+include(src/vendor/BackwardConfig.cmake)
 message (STATUS "----------------------------------------\n")
 
 #####################################

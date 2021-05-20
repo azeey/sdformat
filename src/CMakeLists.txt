@@ -206,7 +206,8 @@ target_link_libraries(${sdf_target}
     ignition-math${IGN_MATH_VER}::ignition-math${IGN_MATH_VER}
     ignition-utils${IGN_UTILS_VER}::ignition-utils${IGN_UTILS_VER}
   PRIVATE
-    ${TinyXML2_LIBRARIES})
+    ${TinyXML2_LIBRARIES}
+    ${BACKWARD_LIBRARIES})
 
 if (WIN32)
   target_compile_definitions(${sdf_target} PRIVATE URDFDOM_STATIC)
@@ -217,6 +218,7 @@ target_include_directories(${sdf_target}
     $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:${INCLUDE_INSTALL_DIR}/..>
 )
+target_compile_definitions(${sdf_target} PRIVATE ${BACKWARD_DEFINITIONS})
 
 message (STATUS "URDF_LIBRARY_DIRS=${URDF_LIBRARY_DIRS}")
 message (STATUS "URDF_LIBRARIES=${URDF_LIBRARIES}")
