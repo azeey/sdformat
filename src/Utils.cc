@@ -219,17 +219,32 @@ sdf::Errors loadIncludedInterfaceModels(sdf::ElementPtr _sdf,
   {
     sdf::NestedInclude include;
     include.SetUri(includeElem->Get<std::string>("uri"));
-    auto absoluteParentName = computeAbsoluteName(_sdf, allErrors);
+    bool isMerge = false;
+    if (includeElem->HasAttribute("merge"))
+    {
+      includeElem->GetAttribute("merge")->Get<bool>(isMerge);
+    }
+    std::optional<std::string> absoluteParentName;
+    if (isMerge)
+    {
+      absoluteParentName = computeAbsoluteName(_sdf->GetParent(), allErrors);
+      include.SetLocalModelName(_sdf->Get<std::string>("name"));
+    }
+    else
+    {
+      absoluteParentName = computeAbsoluteName(_sdf, allErrors);
+
+      if (includeElem->HasElement("name"))
+      {
+        include.SetLocalModelName(includeElem->Get<std::string>("name"));
+      }
+    }
 
     if (absoluteParentName.has_value())
     {
       include.SetAbsoluteParentName(*absoluteParentName);
     }
 
-    if (includeElem->HasElement("name"))
-    {
-      include.SetLocalModelName(includeElem->Get<std::string>("name"));
-    }
     if (includeElem->HasElement("static"))
     {
       include.SetIsStatic(includeElem->Get<bool>("static"));
@@ -253,6 +268,11 @@ sdf::Errors loadIncludedInterfaceModels(sdf::ElementPtr _sdf,
     {
       include.SetPlacementFrame(
           includeElem->Get<std::string>("placement_frame"));
+    }
+
+    if (includeElem->HasAttribute("merge"))
+    {
+      include.SetIsMerge(isMerge);
     }
 
     // Iterate through custom model parsers in reverse per the SDFormat proposal

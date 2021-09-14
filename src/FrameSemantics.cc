@@ -200,7 +200,7 @@ FindSinkVertex(
 }
 
 /////////////////////////////////////////////////
-std::pair<const Link *, std::string>
+std::pair<Model::CanonicalLinkPtr, std::string>
     modelCanonicalLinkAndRelativeName(const Model *_model)
 {
   if (nullptr == _model)
@@ -301,8 +301,9 @@ Errors buildFrameAttachedToGraph(
         "Invalid model element in sdf::Model."});
     return errors;
   }
-  else if (_model->LinkCount() == 0 && _model->ModelCount() == 0 &&
-      _model->InterfaceModelCount() == 0 && !_model->Static())
+  else if (_model->LinkCount() == 0 && _model->InterfaceLinkCount() == 0 &&
+           _model->ModelCount() == 0 && _model->InterfaceModelCount() == 0 &&
+           !_model->Static())
   {
     errors.push_back({ErrorCode::MODEL_WITHOUT_LINK,
                      "A model must have at least one link."});
@@ -346,6 +347,21 @@ Errors buildFrameAttachedToGraph(
   for (uint64_t l = 0; l < _model->LinkCount(); ++l)
   {
     auto link = _model->LinkByIndex(l);
+    if (outModel.Count(link->Name()) > 0)
+    {
+      errors.push_back({ErrorCode::DUPLICATE_NAME,
+          "Link with non-unique name [" + link->Name() +
+          "] detected in model with name [" + _model->Name() +
+          "]."});
+      continue;
+    }
+    outModel.AddVertex(link->Name(), sdf::FrameType::LINK);
+  }
+
+  // add interface link vertices
+  for (uint64_t il = 0; il < _model->InterfaceLinkCount(); ++il)
+  {
+    auto link = _model->InterfaceLinkByIndex(il);
     if (outModel.Count(link->Name()) > 0)
     {
       errors.push_back({ErrorCode::DUPLICATE_NAME,
@@ -905,6 +921,26 @@ Errors buildPoseRelativeToGraph(
       // relative_to is empty, so add edge from implicit model frame to link
       outModel.AddEdge({modelFrameId, linkId}, link->RawPose());
     }
+  }
+
+  // add interface link vertices and default edge if relative_to is empty
+  for (uint64_t il = 0; il < _model->InterfaceLinkCount(); ++il)
+  {
+    auto link = _model->InterfaceLinkByIndex(il);
+    if (outModel.Count(link->Name()) > 0)
+    {
+      errors.push_back({ErrorCode::DUPLICATE_NAME,
+          "Link with non-unique name [" + link->Name() +
+          "] detected in model with name [" + _model->Name() +
+          "]."});
+      continue;
+    }
+    auto linkId =
+        outModel.AddVertex(link->Name(), sdf::FrameType::LINK).Id();
+
+    // The pose of interface links is always given relative to the model
+    // frame, so add edge from implicit model frame to the interface link
+    outModel.AddEdge({modelFrameId, linkId}, link->PoseInModelFrame());
   }
 
   // add joint vertices

@@ -14,15 +14,20 @@
  * limitations under the License.
  *
 */
+#include <cstddef>
 #include <memory>
 #include <string>
 #include <unordered_set>
+#include <variant>
 #include <vector>
 #include <ignition/math/Pose3.hh>
 #include <ignition/math/SemanticVersion.hh>
 #include "sdf/Error.hh"
 #include "sdf/Frame.hh"
 #include "sdf/InterfaceElements.hh"
+#include "sdf/InterfaceFrame.hh"
+#include "sdf/InterfaceJoint.hh"
+#include "sdf/InterfaceLink.hh"
 #include "sdf/InterfaceModel.hh"
 #include "sdf/InterfaceModelPoseGraph.hh"
 #include "sdf/Joint.hh"
@@ -80,8 +85,17 @@ class sdf::Model::Implementation
   public: std::vector<Model> models;
 
   /// \brief The interface models specified in this model.
-  public: std::vector<std::pair<sdf::NestedInclude, sdf::InterfaceModelPtr>>
-              interfaceModels;
+  public: std::vector<std::pair<sdf::NestedInclude, 
+          sdf::InterfaceModelConstPtr>> interfaceModels;
+
+  /// \brief The interface links specified in this model.
+  public: std::vector<InterfaceLink> interfaceLinks;
+
+  /// \brief The interface joints specified in this model.
+  public: std::vector<InterfaceJoint> interfaceJoints;
+
+  /// \brief The interface frames specified in this model.
+  public: std::vector<InterfaceFrame> interfaceFrames;
 
   /// \brief The SDF element pointer used during load.
   public: sdf::ElementPtr sdf;
@@ -196,15 +210,54 @@ Errors Model::Load(sdf::ElementPtr _sdf, const ParserConfig &_config)
     frameNames.insert(model.Name());
   }
 
+  std::vector<std::pair<sdf::NestedInclude, sdf::InterfaceModelPtr>>
+      tmpInterfaceModels;
   // Load included models via the interface API
   Errors interfaceModelLoadErrors = loadIncludedInterfaceModels(
-      _sdf, _config, this->dataPtr->interfaceModels);
+      _sdf, _config, tmpInterfaceModels);
   errors.insert(errors.end(), interfaceModelLoadErrors.begin(),
       interfaceModelLoadErrors.end());
 
-  for (const auto &ifaceModelPair : this->dataPtr->interfaceModels)
+  for (const auto &[ifaceInclude, ifaceModel] : tmpInterfaceModels)
   {
-    frameNames.insert(ifaceModelPair.second->Name());
+    if (!ifaceInclude.IsMerge().value_or(false))
+    {
+      frameNames.insert(ifaceModel->Name());
+      this->dataPtr->interfaceModels.emplace_back(ifaceInclude, ifaceModel);
+    }
+    else
+    {
+      // Merge the interface elements to the parent model
+      for (const auto &ifaceLink : ifaceModel->Links())
+      {
+        this->dataPtr->interfaceLinks.push_back(ifaceLink);
+        // TODO(azeey) Check if frame exists and add to frameNames
+        frameNames.insert(ifaceLink.Name());
+      }
+
+      for (const auto &ifaceJoint : ifaceModel->Joints())
+      {
+        this->dataPtr->interfaceJoints.push_back(ifaceJoint);
+        // TODO(azeey) Check if frame exists and add to frameNames
+        frameNames.insert(ifaceJoint.Name());
+      }
+
+      for (const auto &ifaceFrame : ifaceModel->Frames())
+      {
+        this->dataPtr->interfaceFrames.push_back(ifaceFrame);
+        // TODO(azeey) Check if frame exists and add to frameNames
+        frameNames.insert(ifaceFrame.Name());
+      }
+      for (const auto &ifaceNestedModel : ifaceModel->NestedModels())
+      {
+        // TODO(azeey) Using the ifaceInclude from the parent model is probably
+        // wrong.
+        this->dataPtr->interfaceModels.emplace_back(ifaceInclude,
+                                                    ifaceNestedModel);
+        // TODO(azeey) Check if frame exists and add to frameNames
+        frameNames.insert(ifaceNestedModel->Name());
+      }
+    }
   }
 
   // Load all the links.
@@ -245,10 +298,11 @@ Errors Model::Load(sdf::ElementPtr _sdf, const ParserConfig &_config)
   }
 
   // If the model is not static and has no nested models:
-  // Require at least one link so the implicit model frame can be attached to
-  // something.
+  // Require at least one (interface) link so the implicit model frame can be
+  // attached to something.
   if (!this->Static() && this->dataPtr->links.empty() &&
-      this->dataPtr->models.empty() && this->dataPtr->interfaceModels.empty())
+      this->dataPtr->interfaceLinks.empty() && this->dataPtr->models.empty() &&
+      this->dataPtr->interfaceModels.empty())
   {
     errors.push_back({ErrorCode::MODEL_WITHOUT_LINK,
                      "A model must have at least one link."});
@@ -571,13 +625,19 @@ const Link *Model::CanonicalLink() const
 }
 
 /////////////////////////////////////////////////
-std::pair<const Link*, std::string> Model::CanonicalLinkAndRelativeName() const
+std::pair<Model::CanonicalLinkPtr, std::string>
+Model::CanonicalLinkAndRelativeName() const
 {
   if (this->CanonicalLinkName().empty())
   {
     if (this->LinkCount() > 0)
     {
       auto firstLink = this->LinkByIndex(0);
+      return std::make_pair(firstLink, firstLink->Name());
+    }
+    if (this->InterfaceLinkCount() > 0)
+    {
+      auto firstLink = this->InterfaceLinkByIndex(0);
       return std::make_pair(firstLink, firstLink->Name());
     }
     else if (this->ModelCount() > 0)
@@ -789,4 +849,96 @@ const NestedInclude *Model::InterfaceModelNestedIncludeByIndex(
   if (_index < this->dataPtr->interfaceModels.size())
     return &this->dataPtr->interfaceModels[_index].first;
   return nullptr;
+}
+
+/////////////////////////////////////////////////
+uint64_t Model::InterfaceLinkCount() const
+{
+  return this->dataPtr->interfaceLinks.size();
+}
+
+/////////////////////////////////////////////////
+const InterfaceLink * Model::InterfaceLinkByIndex(
+    const uint64_t _index) const
+{
+  if (_index < this->dataPtr->interfaceLinks.size())
+    return &this->dataPtr->interfaceLinks[_index];
+  return nullptr;
+}
+
+/////////////////////////////////////////////////
+uint64_t Model::InterfaceJointCount() const
+{
+  return this->dataPtr->interfaceJoints.size();
+}
+
+/////////////////////////////////////////////////
+const InterfaceJoint * Model::InterfaceJointByIndex(
+    const uint64_t _index) const
+{
+  if (_index < this->dataPtr->interfaceJoints.size())
+    return &this->dataPtr->interfaceJoints[_index];
+  return nullptr;
+}
+
+/////////////////////////////////////////////////
+uint64_t Model::InterfaceFrameCount() const
+{
+  return this->dataPtr->interfaceFrames.size();
+}
+
+/////////////////////////////////////////////////
+const InterfaceFrame * Model::InterfaceFrameByIndex(
+    const uint64_t _index) const
+{
+  if (_index < this->dataPtr->interfaceFrames.size())
+    return &this->dataPtr->interfaceFrames[_index];
+  return nullptr;
+}
+
+/////////////////////////////////////////////////
+Model::CanonicalLinkPtr::CanonicalLinkPtr(std::nullptr_t)
+{
+}
+
+Model::CanonicalLinkPtr::CanonicalLinkPtr(const sdf::Link *_link) : var(_link)
+{
+}
+Model::CanonicalLinkPtr::CanonicalLinkPtr(const sdf::InterfaceLink *_ifaceLink)
+    : var(_ifaceLink)
+{
+}
+/////////////////////////////////////////////////
+Model::CanonicalLinkPtr::operator const Link *() const
+{
+  auto linkPtr = std::get_if<const Link *>(&this->var);
+  if (nullptr != linkPtr)
+    return *linkPtr;
+  return nullptr;
+}
+
+Model::CanonicalLinkPtr::operator const InterfaceLink *() const
+{
+  auto linkPtr = std::get_if<const InterfaceLink *>(&this->var);
+  if (nullptr != linkPtr)
+    return *linkPtr;
+  return nullptr;
+}
+
+bool sdf::operator==(std::nullptr_t, const Model::CanonicalLinkPtr &_other)
+{
+  return !(nullptr != _other);
+}
+
+bool sdf::operator!=(std::nullptr_t, const Model::CanonicalLinkPtr &_other)
+{
+  if (nullptr != static_cast<const Link *>(_other))
+  {
+    return true;
+  }
+  if (nullptr != static_cast<const InterfaceLink *>(_other))
+  {
+    return true;
+  }
+  return false;
 }
