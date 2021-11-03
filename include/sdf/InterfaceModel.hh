@@ -124,6 +124,9 @@ class SDFORMAT_VISIBLE InterfaceModel
   /// \brief Gets registered links.
   public: const std::vector<sdf::InterfaceLink> &Links() const;
 
+  public: std::optional<bool> ParserSupportsMergeInclude() const;
+  public: void SetParserSupportsMergeInclude(bool _val);
+
   /// \brief Recursively invoke the reposture callback if a the callback is set.
   /// \param[in] _poseGraph Object used for resolving poses.
   private: void InvokeRespostureFunction(

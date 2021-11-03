@@ -79,35 +79,47 @@ sdf::InterfaceModelPtr parseModel(toml::Value &_doc,
   return model;
 }
 
-sdf::InterfaceModelPtr customTomlParser(
-    const sdf::NestedInclude &_include, sdf::Errors &_errors)
+class CustomTomlParser
 {
-  toml::Document doc = toml::parseToml(_include.ResolvedFileName(), _errors);
-  if (_errors.empty())
+  public: CustomTomlParser(bool _supportsMergeInclude = true)
+      : supportsMergeInclude(_supportsMergeInclude)
   {
-    const std::string modelName =
+  }
+
+  public: sdf::InterfaceModelPtr operator()(const sdf::NestedInclude &_include,
+                                            sdf::Errors &_errors)
+  {
+    toml::Document doc = toml::parseToml(_include.ResolvedFileName(), _errors);
+    if (_errors.empty())
+    {
+      const std::string modelName =
         _include.LocalModelName().value_or(doc["name"].ParamGet<std::string>());
 
-    if (_include.IsStatic().has_value())
-    {
-      // if //include/static is set, override the value in the inluded model
-      sdf::Param param("static", "bool", "false", false);
-      param.Set(*_include.IsStatic());
-      doc["static"] = {param};
-    }
-    if (_include.IncludeRawPose().has_value())
-    {
-      // if //include/static is set, override the value in the inluded model
-      sdf::Param poseParam("pose", "pose", "", false);
-      poseParam.Set(*_include.IncludeRawPose());
-      doc["pose"] = {poseParam};
-    }
+      if (_include.IsStatic().has_value())
+      {
+        // if //include/static is set, override the value in the inluded model
+        sdf::Param param("static", "bool", "false", false);
+        param.Set(*_include.IsStatic());
+        doc["static"] = {param};
+      }
+      if (_include.IncludeRawPose().has_value())
+      {
+        // if //include/static is set, override the value in the inluded model
+        sdf::Param poseParam("pose", "pose", "", false);
+        poseParam.Set(*_include.IncludeRawPose());
+        doc["pose"] = {poseParam};
+      }
 
-    return parseModel(doc, modelName);
+      auto model = parseModel(doc, modelName);
+      model->SetParserSupportsMergeInclude(this->supportsMergeInclude);
+      return model;
+    }
+    return nullptr;
   }
-  return nullptr;
-}
 
+  public:
+  bool supportsMergeInclude;
+};
 
 bool endsWith(const std::string &_str, const std::string &_suffix)
 {
@@ -134,6 +146,7 @@ class InterfaceAPI : public ::testing::Test
 
   public: std::string modelDir;
   public: sdf::ParserConfig config;
+  public: CustomTomlParser customTomlParser;
 };
 
 /////////////////////////////////////////////////
@@ -343,7 +356,7 @@ TEST_F(InterfaceAPI, TomlParserWorldInclude)
   const std::string testFile = sdf::testing::TestFile(
       "sdf", "world_include_with_interface_api.sdf");
 
-  this->config.RegisterCustomModelParser(customTomlParser);
+  this->config.RegisterCustomModelParser(this->customTomlParser);
   sdf::Root root;
   sdf::Errors errors = root.Load(testFile, this->config);
   EXPECT_TRUE(errors.empty()) << errors;
@@ -362,7 +375,7 @@ TEST_F(InterfaceAPI, TomlParserModelInclude)
   const std::string testFile = sdf::testing::TestFile(
       "sdf", "model_include_with_interface_api.sdf");
 
-  this->config.RegisterCustomModelParser(customTomlParser);
+  this->config.RegisterCustomModelParser(this->customTomlParser);
   sdf::Root root;
   sdf::Errors errors = root.Load(testFile, this->config);
   EXPECT_TRUE(errors.empty()) << errors;
@@ -382,7 +395,7 @@ TEST_F(InterfaceAPI, FrameSemantics)
   const std::string testFile = sdf::testing::TestFile(
       "sdf", "include_with_interface_api_frame_semantics.sdf");
 
-  this->config.RegisterCustomModelParser(customTomlParser);
+  this->config.RegisterCustomModelParser(this->customTomlParser);
   sdf::Root root;
   sdf::Errors errors = root.Load(testFile, config);
   EXPECT_TRUE(errors.empty()) << errors;
@@ -819,7 +832,7 @@ TEST_F(InterfaceAPI, NameCollision)
 {
   using ignition::math::Pose3d;
 
-  this->config.RegisterCustomModelParser(customTomlParser);
+  this->config.RegisterCustomModelParser(this->customTomlParser);
 
   // ---------------- Name collision in //world/include ----------------
   {
@@ -866,6 +879,25 @@ class InterfaceAPIMergeInclude : public InterfaceAPI
 };
 
 /////////////////////////////////////////////////
+TEST_F(InterfaceAPIMergeInclude, MergeIncludeNotSupported)
+{
+  const std::string testSdf = R"(
+  <sdf version="1.9">
+    <model name="parent_model">
+      <include merge="true">
+        <uri>double_pendulum.toml</uri>
+      </include>
+    </model>
+  </sdf>)";
+  CustomTomlParser parserWithNoMergeInclude(false);
+  this->config.RegisterCustomModelParser(parserWithNoMergeInclude);
+  sdf::Root root;
+  sdf::Errors errors = root.LoadSdfString(testSdf, this->config);
+  ASSERT_FALSE(errors.empty());
+  EXPECT_EQ(sdf::ErrorCode::MERGE_INCLUDE_UNSUPPORTED, errors[0].Code());
+}
+
+/////////////////////////////////////////////////
 TEST_F(InterfaceAPIMergeInclude, Parsing)
 {
   const std::string testSdf = R"(
@@ -877,7 +909,7 @@ TEST_F(InterfaceAPIMergeInclude, Parsing)
       </include>
     </model>
   </sdf>)";
-  this->config.RegisterCustomModelParser(customTomlParser);
+  this->config.RegisterCustomModelParser(this->customTomlParser);
   sdf::Root root;
   sdf::Errors errors = root.LoadSdfString(testSdf, this->config);
   EXPECT_TRUE(errors.empty()) << errors;
@@ -947,17 +979,19 @@ TEST_F(InterfaceAPIMergeInclude, Reposture)
   auto repostureTestParser = [&](const sdf::NestedInclude &_include,
                                  sdf::Errors &) -> sdf::InterfaceModelPtr
   {
-    bool fileHasCorrectSuffix = endsWith(_include.resolvedFileName, ".nonce_1");
-    EXPECT_TRUE(fileHasCorrectSuffix) << "File: " << _include.resolvedFileName;
+    bool fileHasCorrectSuffix =
+        endsWith(_include.ResolvedFileName(), ".nonce_1");
+    EXPECT_TRUE(fileHasCorrectSuffix)
+        << "File: " << _include.ResolvedFileName();
     if (!fileHasCorrectSuffix)
       return nullptr;
 
-    const std::string absoluteModelName =
-        sdf::JoinName(_include.absoluteParentName, *_include.localModelName);
+    const std::string absoluteModelName = sdf::JoinName(
+        _include.AbsoluteParentName(), *_include.LocalModelName());
 
-    auto model = std::make_shared<sdf::InterfaceModel>(*_include.localModelName,
-        makeRepostureFunc(absoluteModelName), false, "base_link",
-        _include.includeRawPose.value_or(Pose3d {}));
+    auto model = std::make_shared<sdf::InterfaceModel>(
+        *_include.LocalModelName(), makeRepostureFunc(absoluteModelName), false,
+        "base_link", _include.IncludeRawPose().value_or(Pose3d{}));
     model->AddLink({"base_link", {}});
     models[absoluteModelName] = model;
 
@@ -970,6 +1004,7 @@ TEST_F(InterfaceAPIMergeInclude, Reposture)
     models[absoluteNestedModelName] = nestedModel;
 
     model->AddNestedModel(nestedModel);
+    model->SetParserSupportsMergeInclude(true);
     return model;
   };
 

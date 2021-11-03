@@ -219,32 +219,17 @@ sdf::Errors loadIncludedInterfaceModels(sdf::ElementPtr _sdf,
   {
     sdf::NestedInclude include;
     include.SetUri(includeElem->Get<std::string>("uri"));
-    bool isMerge = false;
-    if (includeElem->HasAttribute("merge"))
-    {
-      includeElem->GetAttribute("merge")->Get<bool>(isMerge);
-    }
-    std::optional<std::string> absoluteParentName;
-    if (isMerge)
-    {
-      absoluteParentName = computeAbsoluteName(_sdf->GetParent(), allErrors);
-      include.SetLocalModelName(_sdf->Get<std::string>("name"));
-    }
-    else
-    {
-      absoluteParentName = computeAbsoluteName(_sdf, allErrors);
-
-      if (includeElem->HasElement("name"))
-      {
-        include.SetLocalModelName(includeElem->Get<std::string>("name"));
-      }
-    }
+    auto absoluteParentName = computeAbsoluteName(_sdf, allErrors);
 
     if (absoluteParentName.has_value())
     {
       include.SetAbsoluteParentName(*absoluteParentName);
     }
 
+    if (includeElem->HasElement("name"))
+    {
+      include.SetLocalModelName(includeElem->Get<std::string>("name"));
+    }
     if (includeElem->HasElement("static"))
     {
       include.SetIsStatic(includeElem->Get<bool>("static"));
@@ -272,7 +257,7 @@ sdf::Errors loadIncludedInterfaceModels(sdf::ElementPtr _sdf,
 
     if (includeElem->HasAttribute("merge"))
     {
-      include.SetIsMerge(isMerge);
+      include.SetIsMerge(includeElem->Get<bool>("merge"));
     }
 
     // Iterate through custom model parsers in reverse per the SDFormat proposal
@@ -296,6 +281,15 @@ sdf::Errors loadIncludedInterfaceModels(sdf::ElementPtr _sdf,
         {
           allErrors.emplace_back(sdf::ErrorCode::ATTRIBUTE_INVALID,
               "Missing name of custom model with URI [" + include.Uri() + "]");
+        }
+        else if (include.IsMerge().value_or(false) &&
+                 !model->ParserSupportsMergeInclude().value_or(false))
+        {
+          allErrors.emplace_back(sdf::ErrorCode::MERGE_INCLUDE_UNSUPPORTED,
+                                 "Custom parser does not support "
+                                 "merge-include, but merge-include was "
+                                 "requested for model with uri [" +
+                                     include.Uri() + "]");
         }
         else
         {
