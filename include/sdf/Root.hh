@@ -151,6 +151,7 @@ namespace sdf
     /// not been called.
     public: sdf::ElementPtr Element() const;
 
+    public: std::vector<std::string> DebugGenerateGraphiz() const;
     /// \brief Private data pointer
     IGN_UTILS_UNIQUE_IMPL_PTR(dataPtr)
   };

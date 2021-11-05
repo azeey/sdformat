@@ -413,3 +413,30 @@ sdf::ElementPtr Root::Element() const
 {
   return this->dataPtr->sdf;
 }
+
+std::vector<std::string> Root::DebugGenerateGraphiz() const
+{
+  std::vector<std::string> output;
+  if (this->Model())
+  {
+    std::ostringstream oss;
+    oss << this->dataPtr->modelFrameAttachedToGraph.Graph(); 
+    output.push_back(oss.str());
+    oss.str("");
+    oss << this->dataPtr->modelPoseRelativeToGraph.Graph(); 
+    output.push_back(oss.str());
+  }
+  else
+  {
+    for (auto i = 0u; i < this->WorldCount(); ++i)
+    {
+      std::ostringstream oss;
+      oss << this->dataPtr->worldFrameAttachedToGraphs[i].Graph(); 
+      output.push_back(oss.str());
+      oss.str("");
+      oss << this->dataPtr->worldPoseRelativeToGraphs[i].Graph(); 
+      output.push_back(oss.str());
+    }
+  }
+  return output;
+}

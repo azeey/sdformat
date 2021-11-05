@@ -60,7 +60,8 @@ sdf::InterfaceModelPtr parseModel(toml::Value &_doc,
 
   for (auto &[name, frame] : _doc["frames"].Map())
   {
-    const auto attachedTo = frame["attached_to"].ParamGet<std::string>();
+    const auto attachedTo =
+        frame["attached_to"].ParamGet<std::string>("__model__");
     const auto pose = frame["pose"].ParamGet<ignition::math::Pose3d>();
     model->AddFrame({name, attachedTo, pose});
   }
@@ -143,6 +144,7 @@ class InterfaceAPI : public ::testing::Test
           return sdf::filesystem::append(modelDir, _file);
         });
   }
+  public: void CheckFrameSemantics(const sdf::World *world);
 
   public: std::string modelDir;
   public: sdf::ParserConfig config;
@@ -312,7 +314,7 @@ void TomlParserTest(const sdf::InterfaceModelConstPtr &_interfaceModel)
     EXPECT_EQ(expLinks[link.Name()], link.PoseInModelFrame());
   }
   std::map <std::string, std::pair<std::string, Pose3d>> expFrames = {
-      {"frame_1", {"", Pose3d(0, 1, 0.0, 0, 0, 0)}},
+      {"frame_1", {"__model__", Pose3d(0, 1, 0.0, 0, 0, 0)}},
       {"frame_2", {"lower_link", Pose3d(0, 0, 1, 0, 0, 0)}},
   };
 
@@ -388,21 +390,9 @@ TEST_F(InterfaceAPI, TomlParserModelInclude)
   TomlParserTest(interfaceModel);
 }
 
-/////////////////////////////////////////////////
-TEST_F(InterfaceAPI, FrameSemantics)
+void InterfaceAPI::CheckFrameSemantics(const sdf::World *world)
 {
   using ignition::math::Pose3d;
-  const std::string testFile = sdf::testing::TestFile(
-      "sdf", "include_with_interface_api_frame_semantics.sdf");
-
-  this->config.RegisterCustomModelParser(this->customTomlParser);
-  sdf::Root root;
-  sdf::Errors errors = root.Load(testFile, config);
-  EXPECT_TRUE(errors.empty()) << errors;
-
-  const sdf::World *world = root.WorldByIndex(0);
-  ASSERT_NE(nullptr, world);
-  EXPECT_EQ(1u, world->InterfaceModelCount());
 
   auto resolvePoseNoErrors =
       [](const sdf::SemanticPose &_semPose, const std::string _relativeTo = "")
@@ -554,6 +544,25 @@ TEST_F(InterfaceAPI, FrameSemantics)
     EXPECT_EQ("double_pendulum::child_dp::model_1::lower_link",
         resolveAttachedToNoErrors(*frameAttach));
   }
+}
+
+/////////////////////////////////////////////////
+TEST_F(InterfaceAPI, FrameSemantics)
+{
+  const std::string testFile = sdf::testing::TestFile(
+      "sdf", "include_with_interface_api_frame_semantics.sdf");
+  this->config.RegisterCustomModelParser(this->customTomlParser);
+  sdf::Root root;
+  sdf::Errors errors = root.Load(testFile, config);
+  EXPECT_TRUE(errors.empty()) << errors;
+  std::cout << root.DebugGenerateGraphiz()[1] << std::endl;
+
+  const sdf::World *world = root.WorldByIndex(0);
+  ASSERT_NE(nullptr, world);
+  EXPECT_EQ(1u, world->InterfaceModelCount());
+
+  SCOPED_TRACE("InterfaceAPI.FrameSemantics");
+  this->CheckFrameSemantics(world);
 }
 
 /////////////////////////////////////////////////
@@ -932,10 +941,51 @@ TEST_F(InterfaceAPIMergeInclude, Parsing)
   ASSERT_EQ(2u, model->InterfaceModelCount());
   EXPECT_NE(nullptr, model->InterfaceModelByIndex(0));
   EXPECT_NE(nullptr, model->InterfaceModelByIndex(1));
+
+  // for (const auto &g : root.DebugGenerateGraphiz()) {
+  //   std::cout << g << "\n\n\n";
+  // }
+  std::cout << root.DebugGenerateGraphiz()[1] << std::endl;
+}
+
+TEST_F(InterfaceAPIMergeInclude, Parsing2)
+{
+  const std::string testSdf2 = R"(
+    <sdf version="1.9">
+      <model name="parent_model">
+        <include>
+          <uri>double_pendulum.toml</uri>
+          <name>test_name</name>
+        </include>
+      </model>
+    </sdf>)";
+  this->config.RegisterCustomModelParser(this->customTomlParser);
+  sdf::Root root2;
+  sdf::Errors errors2 = root2.LoadSdfString(testSdf2, this->config);
+  EXPECT_TRUE(errors2.empty()) << errors2;
+  std::cout << root2.DebugGenerateGraphiz()[1] << std::endl;
 }
 
 /////////////////////////////////////////////////
-TEST_F(InterfaceAPIMergeInclude, Reposture)
+TEST_F(InterfaceAPIMergeInclude, FrameSemantics)
+{
+  const std::string testFile = sdf::testing::TestFile(
+      "sdf", "merge_include_with_interface_api_frame_semantics.sdf");
+  this->config.RegisterCustomModelParser(this->customTomlParser);
+  sdf::Root root;
+  sdf::Errors errors = root.Load(testFile, config);
+  EXPECT_TRUE(errors.empty()) << errors;
+  std::cout << root.DebugGenerateGraphiz()[1] << std::endl;
+
+  const sdf::World *world = root.WorldByIndex(0);
+  ASSERT_NE(nullptr, world);
+
+  SCOPED_TRACE("InterfaceAPIMergeInclude.FrameSemantics");
+  this->CheckFrameSemantics(world);
+}
+
+/////////////////////////////////////////////////
+TEST_F(InterfaceAPIMergeInclude, Reposturing)
 {
   using ignition::math::Pose3d;
   const std::string testFile = sdf::testing::TestFile(
@@ -986,8 +1036,8 @@ TEST_F(InterfaceAPIMergeInclude, Reposture)
     if (!fileHasCorrectSuffix)
       return nullptr;
 
-    const std::string absoluteModelName = sdf::JoinName(
-        _include.AbsoluteParentName(), *_include.LocalModelName());
+    // Use parent name because we know merge=true
+    const std::string absoluteModelName = _include.AbsoluteParentName();
 
     auto model = std::make_shared<sdf::InterfaceModel>(
         *_include.LocalModelName(), makeRepostureFunc(absoluteModelName), false,
@@ -1033,9 +1083,13 @@ TEST_F(InterfaceAPIMergeInclude, Reposture)
 
     return testing::AssertionSuccess();
   };
+  for (const auto &[k, v] : posesAfterReposture)
+  {
+    std::cout << k << ": " << v << std::endl;
+  }
   // There is one included model using a custom parser containing two models and
   // two links.
-  ASSERT_EQ(4u, posesAfterReposture.size());
+  ASSERT_EQ(3u, posesAfterReposture.size());
   EXPECT_TRUE(checkPose("parent_model", {1, 2, 3, 0.1, 0, 0}));
   EXPECT_TRUE(checkPose("parent_model::base_link", {1, 2, 3, 0.1, 0, 0}));
   EXPECT_TRUE(

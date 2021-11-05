@@ -85,7 +85,7 @@ class sdf::Model::Implementation
   public: std::vector<Model> models;
 
   /// \brief The interface models specified in this model.
-  public: std::vector<std::pair<sdf::NestedInclude, 
+  public: std::vector<std::pair<std::optional<sdf::NestedInclude>, 
           sdf::InterfaceModelConstPtr>> interfaceModels;
 
   /// \brief The interface links specified in this model.
@@ -250,9 +250,7 @@ Errors Model::Load(sdf::ElementPtr _sdf, const ParserConfig &_config)
       }
       for (const auto &ifaceNestedModel : ifaceModel->NestedModels())
       {
-        // TODO(azeey) Using the ifaceInclude from the parent model is probably
-        // wrong.
-        this->dataPtr->interfaceModels.emplace_back(ifaceInclude,
+        this->dataPtr->interfaceModels.emplace_back(std::nullopt,
                                                     ifaceNestedModel);
         // TODO(azeey) Check if frame exists and add to frameNames
         frameNames.insert(ifaceNestedModel->Name());
@@ -847,7 +845,7 @@ const NestedInclude *Model::InterfaceModelNestedIncludeByIndex(
     const uint64_t _index) const
 {
   if (_index < this->dataPtr->interfaceModels.size())
-    return &this->dataPtr->interfaceModels[_index].first;
+    return optionalToPointer(this->dataPtr->interfaceModels[_index].first);
   return nullptr;
 }
 
