@@ -656,7 +656,7 @@ void World::SetPoseRelativeToGraph(sdf::ScopedGraph<PoseRelativeToGraph> _graph)
   }
   for (auto &ifaceModelPair : this->dataPtr->interfaceModels)
   {
-    ifaceModelPair.second->InvokeRespostureFunction(
+    ifaceModelPair.second->InvokeRepostureFunction(
         this->dataPtr->poseRelativeToGraph);
   }
   for (auto &frame : this->dataPtr->frames)

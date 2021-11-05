@@ -88,14 +88,18 @@ class sdf::Model::Implementation
   public: std::vector<std::pair<std::optional<sdf::NestedInclude>, 
           sdf::InterfaceModelConstPtr>> interfaceModels;
 
+  /// \brief The interface models specified in this model.
+  public: std::vector<std::pair<std::optional<sdf::NestedInclude>, 
+          sdf::InterfaceModelConstPtr>> interfaceMergedModels;
+
   /// \brief The interface links specified in this model.
-  public: std::vector<InterfaceLink> interfaceLinks;
+  public: std::vector<const InterfaceLink *> interfaceLinks;
 
   /// \brief The interface joints specified in this model.
-  public: std::vector<InterfaceJoint> interfaceJoints;
+  public: std::vector<const InterfaceJoint *> interfaceJoints;
 
   /// \brief The interface frames specified in this model.
-  public: std::vector<InterfaceFrame> interfaceFrames;
+  public: std::vector<const InterfaceFrame*> interfaceFrames;
 
   /// \brief The SDF element pointer used during load.
   public: sdf::ElementPtr sdf;
@@ -227,24 +231,27 @@ Errors Model::Load(sdf::ElementPtr _sdf, const ParserConfig &_config)
     }
     else
     {
+      this->dataPtr->interfaceMergedModels.emplace_back(ifaceInclude,
+                                                        ifaceModel);
+
       // Merge the interface elements to the parent model
       for (const auto &ifaceLink : ifaceModel->Links())
       {
-        this->dataPtr->interfaceLinks.push_back(ifaceLink);
+        this->dataPtr->interfaceLinks.push_back(&ifaceLink);
         // TODO(azeey) Check if frame exists and add to frameNames
         frameNames.insert(ifaceLink.Name());
       }
 
       for (const auto &ifaceJoint : ifaceModel->Joints())
       {
-        this->dataPtr->interfaceJoints.push_back(ifaceJoint);
+        this->dataPtr->interfaceJoints.push_back(&ifaceJoint);
         // TODO(azeey) Check if frame exists and add to frameNames
         frameNames.insert(ifaceJoint.Name());
       }
 
       for (const auto &ifaceFrame : ifaceModel->Frames())
       {
-        this->dataPtr->interfaceFrames.push_back(ifaceFrame);
+        this->dataPtr->interfaceFrames.push_back(&ifaceFrame);
         // TODO(azeey) Check if frame exists and add to frameNames
         frameNames.insert(ifaceFrame.Name());
       }
@@ -741,7 +748,15 @@ void Model::SetPoseRelativeToGraph(sdf::ScopedGraph<PoseRelativeToGraph> _graph)
   }
   for (auto &ifaceModelPair : this->dataPtr->interfaceModels)
   {
-    ifaceModelPair.second->InvokeRespostureFunction(childPoseGraph);
+    // Don't invoke reposture for interface models that were merged.
+    if (ifaceModelPair.first.has_value())
+    {
+      ifaceModelPair.second->InvokeRepostureFunction(childPoseGraph);
+    }
+  }
+  for (auto &ifaceModelPair : this->dataPtr->interfaceMergedModels)
+  {
+    ifaceModelPair.second->InvokeRepostureFunction(childPoseGraph);
   }
   for (auto &link : this->dataPtr->links)
   {
@@ -860,7 +875,7 @@ const InterfaceLink * Model::InterfaceLinkByIndex(
     const uint64_t _index) const
 {
   if (_index < this->dataPtr->interfaceLinks.size())
-    return &this->dataPtr->interfaceLinks[_index];
+    return this->dataPtr->interfaceLinks[_index];
   return nullptr;
 }
 
@@ -875,7 +890,7 @@ const InterfaceJoint * Model::InterfaceJointByIndex(
     const uint64_t _index) const
 {
   if (_index < this->dataPtr->interfaceJoints.size())
-    return &this->dataPtr->interfaceJoints[_index];
+    return this->dataPtr->interfaceJoints[_index];
   return nullptr;
 }
 
@@ -890,7 +905,7 @@ const InterfaceFrame * Model::InterfaceFrameByIndex(
     const uint64_t _index) const
 {
   if (_index < this->dataPtr->interfaceFrames.size())
-    return &this->dataPtr->interfaceFrames[_index];
+    return this->dataPtr->interfaceFrames[_index];
   return nullptr;
 }
 

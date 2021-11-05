@@ -158,7 +158,7 @@ void InterfaceModel::SetParserSupportsMergeInclude(bool _val)
 }
 
 /////////////////////////////////////////////////
-void InterfaceModel::InvokeRespostureFunction(
+void InterfaceModel::InvokeRepostureFunction(
     sdf::ScopedGraph<PoseRelativeToGraph> _graph) const
 {
   if (this->dataPtr->repostureFunction)
@@ -169,7 +169,7 @@ void InterfaceModel::InvokeRespostureFunction(
 
   for (const auto &nestedIfaceModel : this->dataPtr->nestedModels)
   {
-    nestedIfaceModel->InvokeRespostureFunction(
+    nestedIfaceModel->InvokeRepostureFunction(
         _graph.ChildModelScope(this->Name()));
   }
 }

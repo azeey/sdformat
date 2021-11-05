@@ -129,7 +129,7 @@ class SDFORMAT_VISIBLE InterfaceModel
 
   /// \brief Recursively invoke the reposture callback if a the callback is set.
   /// \param[in] _poseGraph Object used for resolving poses.
-  private: void InvokeRespostureFunction(
+  private: void InvokeRepostureFunction(
       sdf::ScopedGraph<PoseRelativeToGraph> _graph) const;
 
   friend World;

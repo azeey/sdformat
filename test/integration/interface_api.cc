@@ -991,8 +991,8 @@ TEST_F(InterfaceAPIMergeInclude, Reposturing)
   const std::string testFile = sdf::testing::TestFile(
       "sdf", "merge_include_with_interface_api_reposture.sdf");
 
-  std::unordered_map<std::string, sdf::InterfaceModelPtr> models;
   std::unordered_map<std::string, Pose3d> posesAfterReposture;
+  std::unordered_map<std::string, std::vector<std::string>> elementsToReposture;
 
   // Create a resposture callback function for a given absolute model name. The
   // name is used to store poses in `posesAfterReposture` as well as to lookup
@@ -1000,27 +1000,19 @@ TEST_F(InterfaceAPIMergeInclude, Reposturing)
   auto makeRepostureFunc = [&](const std::string &_absoluteName)
   {
     auto repostureFunc =
-        [modelName = _absoluteName, &models, &posesAfterReposture](
+        [modelName = _absoluteName, &elementsToReposture, &posesAfterReposture](
             const sdf::InterfaceModelPoseGraph &_graph)
     {
+      auto modelIt = elementsToReposture.find(modelName);
+      ASSERT_TRUE(modelIt != elementsToReposture.end());
+
+      for (const auto &elem : modelIt->second)
       {
         ignition::math::Pose3d pose;
         sdf::Errors errors =
-            _graph.ResolveNestedModelFramePoseInWorldFrame(pose);
+            _graph.ResolveNestedFramePose(pose, elem);
         EXPECT_TRUE(errors.empty()) << errors;
-        posesAfterReposture[modelName] = pose;
-      }
-
-      auto modelIt = models.find(modelName);
-      if (modelIt != models.end())
-      {
-        for (const auto &link : modelIt->second->Links())
-        {
-          ignition::math::Pose3d pose;
-          sdf::Errors errors = _graph.ResolveNestedFramePose(pose, link.Name());
-          EXPECT_TRUE(errors.empty()) << errors;
-          posesAfterReposture[sdf::JoinName(modelName, link.Name())] = pose;
-        }
+        posesAfterReposture[sdf::JoinName(modelName, elem)] = pose;
       }
     };
     return repostureFunc;
@@ -1043,15 +1035,17 @@ TEST_F(InterfaceAPIMergeInclude, Reposturing)
         *_include.LocalModelName(), makeRepostureFunc(absoluteModelName), false,
         "base_link", _include.IncludeRawPose().value_or(Pose3d{}));
     model->AddLink({"base_link", {}});
-    models[absoluteModelName] = model;
+    elementsToReposture[absoluteModelName].emplace_back("base_link");
 
     const std::string absoluteNestedModelName =
         sdf::JoinName(absoluteModelName, "nested_model");
     auto nestedModel = std::make_shared<sdf::InterfaceModel>("nested_model",
         makeRepostureFunc(absoluteNestedModelName), false, "nested_link",
         Pose3d(3, 0, 0, 0, 0, 0));
+    elementsToReposture[absoluteNestedModelName].emplace_back("__model__");
+
     nestedModel->AddLink({"nested_link", Pose3d(0, 0, 0, 0.1, 0, 0)});
-    models[absoluteNestedModelName] = nestedModel;
+    elementsToReposture[absoluteNestedModelName].emplace_back("nested_link");
 
     model->AddNestedModel(nestedModel);
     model->SetParserSupportsMergeInclude(true);
@@ -1090,7 +1084,6 @@ TEST_F(InterfaceAPIMergeInclude, Reposturing)
   // There is one included model using a custom parser containing two models and
   // two links.
   ASSERT_EQ(3u, posesAfterReposture.size());
-  EXPECT_TRUE(checkPose("parent_model", {1, 2, 3, 0.1, 0, 0}));
   EXPECT_TRUE(checkPose("parent_model::base_link", {1, 2, 3, 0.1, 0, 0}));
   EXPECT_TRUE(
       checkPose("parent_model::nested_model", {4, 2, 3, 0.1, 0, 0}));
