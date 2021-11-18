@@ -1030,7 +1030,17 @@ TEST_F(InterfaceAPIMergeInclude, Reposturing)
 
     // Use parent name because we know merge=true
     const std::string absoluteModelName = _include.AbsoluteParentName();
-
+    // The following is equivalent to
+    // <model name="M0"> <!-- Merged into parent model
+    //   <pose relative_to="F1">0 0 0   0.1 0 0</pose> <!-- From //include -->
+    //   <link name="base_link"/>
+    //   <model name="nested_model">
+    //     <pose>3 0 0   0 0 0</pose>
+    //     <link name="nested_link">
+    //       <pose>0 0 0   0.1 0 0</pose>
+    //     </link>
+    //   </model>
+    // </model>
     auto model = std::make_shared<sdf::InterfaceModel>(
         *_include.LocalModelName(), makeRepostureFunc(absoluteModelName), false,
         "base_link", _include.IncludeRawPose().value_or(Pose3d{}));
@@ -1061,6 +1071,8 @@ TEST_F(InterfaceAPIMergeInclude, Reposturing)
   sdf::Root root;
   sdf::Errors errors = root.Load(testFile, this->config);
   EXPECT_TRUE(errors.empty()) << errors;
+  std::cout << "Frame:\n" << root.DebugGenerateGraphiz()[0] << std::endl;
+  std::cout << "Pose:\n" << root.DebugGenerateGraphiz()[1] << std::endl;
   auto checkPose =
       [&posesAfterReposture](
           const std::string &_name, const Pose3d &_expectedPose)

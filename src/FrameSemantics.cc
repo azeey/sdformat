@@ -326,7 +326,7 @@ getFunctionsAndTypes(const ModelT *_model)
       countFunction = &Model::InterfaceLinkCount;
       indexFunction = &Model::InterfaceLinkByIndex;
       frameType = sdf::FrameType::LINK;
-      elementType = "InterfaceLink";
+      elementType = "Interface Link";
     }
     else if constexpr(std::is_same_v<ElementT, sdf::Joint>)
     {
@@ -340,7 +340,7 @@ getFunctionsAndTypes(const ModelT *_model)
       countFunction = &Model::InterfaceJointCount;
       indexFunction = &Model::InterfaceJointByIndex;
       frameType = sdf::FrameType::JOINT;
-      elementType = "InterfaceJoint";
+      elementType = "Interface Joint";
     }
     else if constexpr(std::is_same_v<ElementT, sdf::Frame>)
     {
@@ -354,7 +354,7 @@ getFunctionsAndTypes(const ModelT *_model)
       countFunction = &Model::InterfaceFrameCount;
       indexFunction = &Model::InterfaceFrameByIndex;
       frameType = sdf::FrameType::FRAME;
-      elementType = "InterfaceFrame";
+      elementType = "Interface Frame";
     }
     else if constexpr(std::is_same_v<ElementT, sdf::Model>)
     {
@@ -372,7 +372,7 @@ getFunctionsAndTypes(const ModelT *_model)
           return _m->InterfaceModelByIndex(i).get();
           });
       frameType = sdf::FrameType::MODEL;
-      elementType = "Nested InterfaceModel";
+      elementType = "Nested Interface Model";
     }
 
     std::vector<const ElementT *> items;
@@ -487,11 +487,13 @@ void addEdgesToGraph(
     // look for vertex in graph that matches relative_to value
     if (_out.Count(relativeTo) != 1)
     {
-      _errors.push_back({ErrorCode::POSE_RELATIVE_TO_INVALID,
-          "relative_to name[" + relativeTo +
-          "] specified by " + elementType + " with name[" + item->Name() +
-          "] does not match a nested model, link, joint, or frame name "
-          "in model with name[" + _model->Name() + "]."});
+      _errors.push_back(
+          {ErrorCode::POSE_RELATIVE_TO_INVALID,
+           "relative_to name[" + relativeTo + "] specified by " +
+               lowercase(elementType) + " with name[" + item->Name() +
+               "] does not match a nested model, link, joint, or frame name "
+               "in model with name[" +
+               _model->Name() + "]."});
       continue;
     }
     auto relativeToId = _out.VertexIdByName(relativeTo);
@@ -499,7 +501,7 @@ void addEdgesToGraph(
     {
       _errors.push_back({ErrorCode::POSE_RELATIVE_TO_CYCLE,
           "relative_to name[" + relativeTo +
-          "] is identical to " + elementType + " name[" + item->Name() +
+          "] is identical to " + lowercase(elementType) + " name[" + item->Name() +
           "], causing a graph cycle "
           "in model with name[" + _model->Name() + "]."});
     }

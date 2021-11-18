@@ -750,13 +750,14 @@ void Model::SetPoseRelativeToGraph(sdf::ScopedGraph<PoseRelativeToGraph> _graph)
   {
     // Don't invoke reposture for interface models that were merged.
     if (ifaceModelPair.first.has_value())
-    {
-      ifaceModelPair.second->InvokeRepostureFunction(childPoseGraph);
+    { 
+      ifaceModelPair.second->InvokeRepostureFunction(childPoseGraph, {});
     }
   }
   for (auto &ifaceModelPair : this->dataPtr->interfaceMergedModels)
   {
-    ifaceModelPair.second->InvokeRepostureFunction(childPoseGraph);
+    ifaceModelPair.second->InvokeRepostureFunction(this->dataPtr->poseGraph,
+                                                   this->Name());
   }
   for (auto &link : this->dataPtr->links)
   {

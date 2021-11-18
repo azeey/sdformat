@@ -159,18 +159,21 @@ void InterfaceModel::SetParserSupportsMergeInclude(bool _val)
 
 /////////////////////////////////////////////////
 void InterfaceModel::InvokeRepostureFunction(
-    sdf::ScopedGraph<PoseRelativeToGraph> _graph) const
+    sdf::ScopedGraph<PoseRelativeToGraph> _graph,
+    const std::optional<std::string> &_name) const
 {
+  const auto name = _name.value_or(this->Name());
+
   if (this->dataPtr->repostureFunction)
   {
     this->dataPtr->repostureFunction(
-        sdf::InterfaceModelPoseGraph(this->dataPtr->name, _graph));
+        sdf::InterfaceModelPoseGraph(name, _graph));
   }
 
   for (const auto &nestedIfaceModel : this->dataPtr->nestedModels)
   {
     nestedIfaceModel->InvokeRepostureFunction(
-        _graph.ChildModelScope(this->Name()));
+        _graph.ChildModelScope(name), {});
   }
 }
 }
