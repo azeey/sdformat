@@ -52,6 +52,69 @@ void printGraph(const ScopedGraph<FrameAttachedToGraph> &_graph)
   std::cout << _graph.Graph() << std::endl;
 }
 
+class MergedInterfaceModel
+{
+  public: MergedInterfaceModel(std::pair<std::optional<sdf::NestedInclude>,
+                                         sdf::InterfaceModelConstPtr>
+                                   _ifaceModel)
+      : ifaceModel(std::move(_ifaceModel))
+  {
+  }
+
+  public: static const std::vector<std::pair<std::optional<sdf::NestedInclude>,
+                                             sdf::InterfaceModelConstPtr>> &
+          MergedModels(const sdf::Model *_model)
+  {
+    return _model->MergedInterfaceModels();
+  }
+  public: std::string Name() const
+  {
+    return this->ifaceModel.second->Name();
+  }
+
+  public: const std::vector<sdf::InterfaceLink> &Links() const
+  {
+    return this->ifaceModel.second->Links();
+  }
+
+  public: const std::vector<sdf::InterfaceJoint> &Joints() const
+  {
+    return this->ifaceModel.second->Joints();
+  }
+  public: const std::vector<sdf::InterfaceFrame> &Frames() const
+  {
+    return this->ifaceModel.second->Frames();
+  }
+  public: std::vector<sdf::InterfaceModelConstPtr> NestedModels() const
+  {
+    return this->ifaceModel.second->NestedModels();
+  }
+
+  std::pair<std::optional<sdf::NestedInclude>, sdf::InterfaceModelConstPtr>
+      ifaceModel;
+};
+
+template <typename T>
+class ItemWrapper
+{
+  public: ItemWrapper(T _item) : item(_item)
+  {
+  }
+  public: ItemWrapper(const T *_item) : itemPtr(_item)
+  {
+  }
+
+  public: const T *Get() const
+  {
+    if (item.has_value())
+      return &item.value();
+    return itemPtr;
+  }
+
+  private: std::optional<T> item;
+  private: const T *itemPtr{nullptr};
+};
+
 // The following two functions were originally submitted to ign-math,
 // but were not accepted as they were not generic enough.
 // For now, they will be kept here.
@@ -284,9 +347,9 @@ static Errors resolveModelPoseWithPlacementFrame(
 }
 
 template <typename T>
-std::vector<const T *> toVectorOfPointers(const std::vector<T> &_vec)
+std::vector<ItemWrapper<T>> toVectorOfPointers(const std::vector<T> &_vec)
 {
-  std::vector<const T *> outVec;
+  std::vector<ItemWrapper<T>> outVec;
   outVec.reserve(_vec.size());
   for (const auto &v : _vec)
   {
@@ -294,18 +357,24 @@ std::vector<const T *> toVectorOfPointers(const std::vector<T> &_vec)
   }
   return outVec;
 }
+template <typename T>
+struct UnknownType : std::false_type
+{
+};
 
 template <typename ElementT, typename ModelT>
-std::tuple<std::vector<const ElementT *>, sdf::FrameType, std::string>
+std::tuple<std::vector<ItemWrapper<ElementT>>, sdf::FrameType, std::string>
 getFunctionsAndTypes(const ModelT *_model)
 {
   static_assert(std::is_same_v<ModelT, sdf::Model> ||
-                    std::is_same_v<ModelT, sdf::InterfaceModel>,
-                "This function requires ModeT to be either a sdf::Model or "
-                "sdf::InterfaceModel");
+                    std::is_same_v<ModelT, sdf::InterfaceModel> ||
+                    std::is_same_v<ModelT, sdf::MergedInterfaceModel>,
+                "This function requires ModeT to be either a sdf::Model, "
+                "sdf::InterfaceModel or sdf::MergedInterfaceModel");
 
   using CounterFunction = std::function<uint64_t(const ModelT *)>;
-  using IndexFuncT = std::function<const ElementT *(const ModelT *, uint64_t)>;
+  using IndexFuncT =
+      std::function<ItemWrapper<ElementT>(const ModelT *, uint64_t)>;
 
   CounterFunction countFunction;
   IndexFuncT indexFunction;
@@ -367,15 +436,32 @@ getFunctionsAndTypes(const ModelT *_model)
     {
       countFunction = &Model::InterfaceModelCount;
       indexFunction = IndexFuncT(
-          [](const sdf::Model *_m, uint64_t i) -> const ElementT *
+          [](const sdf::Model *_m, uint64_t i)
           {
           return _m->InterfaceModelByIndex(i).get();
           });
       frameType = sdf::FrameType::MODEL;
       elementType = "Nested Interface Model";
     }
+    else if constexpr(std::is_same_v<ElementT, sdf::MergedInterfaceModel>)
+    {
+      frameType = sdf::FrameType::MODEL;
+      elementType = "Nested Interface Model";
+      std::vector<ItemWrapper<ElementT>> items;
+      auto mergedModels = sdf::MergedInterfaceModel::MergedModels(_model);
+      items.reserve(mergedModels.size());
+      for (const auto &item: mergedModels)
+      {
+        items.push_back(MergedInterfaceModel(item));
+      }
+      return std::make_tuple(items, frameType, elementType);
+    }
+    else
+    {
+      static_assert(UnknownType<ElementT>::value, "Unknown element type");
+    }
 
-    std::vector<const ElementT *> items;
+    std::vector<ItemWrapper<ElementT>> items;
     items.reserve(countFunction(_model));
     for (uint64_t i = 0; i < countFunction(_model); ++i)
     {
@@ -402,7 +488,7 @@ getFunctionsAndTypes(const ModelT *_model)
     }
     else if constexpr (std::is_same_v<ElementT, sdf::InterfaceModel>)
     {
-      std::vector<const ElementT *> outVec;
+      std::vector<ItemWrapper<ElementT>> outVec;
       outVec.reserve(_model->NestedModels().size());
       for (const auto &v : _model->NestedModels())
       {
@@ -423,8 +509,10 @@ void addVerticesToGraph(
 {
   auto [items, frameType, elementType] = getFunctionsAndTypes<ElementT>(_model);
 
-  for (const auto *item : items)
+  std::size_t counter = 0;
+  for (const auto &itemWrapper : items)
   {
+    const auto *item = itemWrapper.Get();
     if (_out.Count(item->Name()) > 0)
     {
       _errors.emplace_back(
@@ -434,7 +522,8 @@ void addVerticesToGraph(
       continue;
     }
     if constexpr (std::is_same_v<ElementT, sdf::Model> ||
-                  std::is_same_v<ElementT, sdf::InterfaceModel>)
+                  std::is_same_v<ElementT, sdf::InterfaceModel> ||
+                  std::is_same_v<ElementT, sdf::MergedInterfaceModel>)
     {
       if constexpr (std::is_same_v<GraphT, sdf::FrameAttachedToGraph>)
       {
@@ -460,6 +549,7 @@ void addVerticesToGraph(
         _extraStepCb(item, itemId);
       }
     }
+    ++counter;
   }
 }
 
@@ -472,8 +562,9 @@ void addEdgesToGraph(
 {
   auto [items, frameType, elementType] = getFunctionsAndTypes<ElementT>(_model);
 
-  for (const auto *item : items)
+  for (const auto &itemWrapper : items)
   {
+    const auto *item = itemWrapper.Get();
     // check if we've already added a default edge
     const auto &[alreadyAdded, relativeTo, poseInRelativeTo] =
         _getRelativeTo(item);
@@ -584,26 +675,20 @@ Errors buildFrameAttachedToGraph(
 
   // add link vertices
   addVerticesToGraph<Link>(outModel, _model, errors);
-  // add interface link vertices
-  addVerticesToGraph<InterfaceLink>(outModel, _model, errors);
 
   // add joint vertices
   addVerticesToGraph<Joint>(outModel, _model, errors);
 
-  // add interface joint vertices
-  addVerticesToGraph<InterfaceJoint>(outModel, _model, errors);
-
   // add frame vertices
   addVerticesToGraph<Frame>(outModel, _model, errors);
-
-  // add interface frame vertices
-  addVerticesToGraph<InterfaceFrame>(outModel, _model, errors);
 
   // add nested model vertices
   addVerticesToGraph<Model>(outModel, _model, errors);
 
   // add nested interface model vertices
   addVerticesToGraph<InterfaceModel>(outModel, _model, errors);
+
+  addVerticesToGraph<MergedInterfaceModel>(outModel, _model, errors);
 
   // add edges from joint to child frames
   for (uint64_t j = 0; j < _model->JointCount(); ++j)
@@ -623,64 +708,11 @@ Errors buildFrameAttachedToGraph(
     outModel.AddEdge({jointId, childFrameId}, true);
   }
 
-  // add edges from interface joint to child frames
-  for (uint64_t j = 0; j < _model->InterfaceJointCount(); ++j)
-  {
-    auto joint = _model->InterfaceJointByIndex(j);
-    auto jointId = outModel.VertexIdByName(joint->Name());
-    auto childFrameName = joint->ChildName();
-    if (outModel.Count(childFrameName) != 1)
-    {
-      errors.push_back({ErrorCode::JOINT_CHILD_LINK_INVALID,
-        "Child frame with name[" + childFrameName +
-        "] specified by joint with name[" + joint->Name() +
-        "] not found in model with name[" + _model->Name() + "]."});
-      continue;
-    }
-    auto childFrameId = outModel.VertexIdByName(childFrameName);
-    outModel.AddEdge({jointId, childFrameId}, true);
-  }
 
   // add frame edges
   for (uint64_t f = 0; f < _model->FrameCount(); ++f)
   {
     auto frame = _model->FrameByIndex(f);
-    auto frameId = outModel.VertexIdByName(frame->Name());
-    // look for vertex in graph that matches attached_to value
-    std::string attachedTo = frame->AttachedTo();
-    if (attachedTo.empty())
-    {
-      // if the attached-to name is empty, use the scope context name
-      attachedTo = scopeContextName;
-    }
-    if (outModel.Count(attachedTo) != 1)
-    {
-      errors.push_back({ErrorCode::FRAME_ATTACHED_TO_INVALID,
-          "attached_to name[" + attachedTo +
-          "] specified by frame with name[" + frame->Name() +
-          "] does not match a nested model, link, joint, or frame name "
-          "in model with name[" + _model->Name() + "]."});
-      continue;
-    }
-    auto attachedToId = outModel.VertexIdByName(attachedTo);
-    bool edgeData = true;
-    if (frame->Name() == frame->AttachedTo())
-    {
-      // set edgeData to false if attaches to itself, since this is invalid
-      edgeData = false;
-      errors.push_back({ErrorCode::FRAME_ATTACHED_TO_CYCLE,
-          "attached_to name[" + attachedTo +
-          "] is identical to frame name[" + frame->Name() +
-          "], causing a graph cycle "
-          "in model with name[" + _model->Name() + "]."});
-    }
-    outModel.AddEdge({frameId, attachedToId}, edgeData);
-  }
-
-  // // add interface frame edges
-  for (uint64_t f = 0; f < _model->InterfaceFrameCount(); ++f)
-  {
-    auto frame = _model->InterfaceFrameByIndex(f);
     auto frameId = outModel.VertexIdByName(frame->Name());
     // look for vertex in graph that matches attached_to value
     std::string attachedTo = frame->AttachedTo();
@@ -815,46 +847,13 @@ Errors buildFrameAttachedToGraph(ScopedGraph<FrameAttachedToGraph> &_out,
   edge.SetWeight(0);
 
   // add link vertices
-  for (const auto &link : _model->Links())
-  {
-    if (outModel.Count(link.Name()) > 0)
-    {
-      errors.push_back({ErrorCode::DUPLICATE_NAME,
-          "Link with non-unique name [" + link.Name() +
-          "] detected in model with name [" + _model->Name() +
-          "]."});
-      continue;
-    }
-    outModel.AddVertex(link.Name(), sdf::FrameType::LINK);
-  }
+  addVerticesToGraph<InterfaceLink>(outModel, _model, errors);
 
-  // add joint vertices
-  for (const auto &joint : _model->Joints())
-  {
-    if (outModel.Count(joint.Name()) > 0)
-    {
-      errors.push_back({ErrorCode::DUPLICATE_NAME,
-          "Joint with non-unique name [" + joint.Name() +
-          "] detected in model with name [" + _model->Name() +
-          "]."});
-      continue;
-    }
-    outModel.AddVertex(joint.Name(), sdf::FrameType::JOINT);
-  }
+  // add interface joint vertices
+  addVerticesToGraph<InterfaceJoint>(outModel, _model, errors);
 
   // add frame vertices
-  for (const auto &frame : _model->Frames())
-  {
-    if (outModel.Count(frame.Name()) > 0)
-    {
-      errors.push_back({ErrorCode::DUPLICATE_NAME,
-          "Frame with non-unique name [" + frame.Name() +
-          "] detected in model with name [" + _model->Name() +
-          "]."});
-      continue;
-    }
-    outModel.AddVertex(frame.Name(), sdf::FrameType::FRAME);
-  }
+  addVerticesToGraph<InterfaceFrame>(outModel, _model, errors);
 
   // add nested model vertices
   for (const auto &nestedIfaceModel : _model->NestedModels())
@@ -963,6 +962,167 @@ Errors buildFrameAttachedToGraph(ScopedGraph<FrameAttachedToGraph> &_out,
     {
       // Add an edge from the implicit model frame to the canonical link found.
       outModel.AddEdge({modelFrameId, canonicalLinkId}, true);
+    }
+  }
+
+  return errors;
+}
+
+/////////////////////////////////////////////////
+Errors buildFrameAttachedToGraph(ScopedGraph<FrameAttachedToGraph> &_out,
+                                 const MergedInterfaceModel *_model, bool)
+{
+  Errors errors;
+
+  if (!_model)
+  {
+    errors.push_back({ErrorCode::ELEMENT_INVALID,
+        "Invalid sdf::InterfaceModel pointer."});
+    return errors;
+  }
+
+  auto outModel = _out;
+  const std::string proxyModelFrameName =
+      "_merged__" + _model->Name() + "__model__";
+  // Add a special frame that represents the frame of the merged model
+  auto proxyFrameVertexId =
+      outModel.AddVertex(proxyModelFrameName, sdf::FrameType::FRAME).Id();
+
+  // add link vertices
+  for (const auto &link : _model->Links())
+  {
+    if (outModel.Count(link.Name()) > 0)
+    {
+      errors.push_back({ErrorCode::DUPLICATE_NAME,
+          "Link with non-unique name [" + link.Name() +
+          "] detected in model with name [" + _model->Name() +
+          "]."});
+      continue;
+    }
+    outModel.AddVertex(link.Name(), sdf::FrameType::LINK);
+  }
+
+  // add joint vertices
+  for (const auto &joint : _model->Joints())
+  {
+    if (outModel.Count(joint.Name()) > 0)
+    {
+      errors.push_back({ErrorCode::DUPLICATE_NAME,
+          "Joint with non-unique name [" + joint.Name() +
+          "] detected in model with name [" + _model->Name() +
+          "]."});
+      continue;
+    }
+    outModel.AddVertex(joint.Name(), sdf::FrameType::JOINT);
+  }
+
+  // add frame vertices
+  for (const auto &frame : _model->Frames())
+  {
+    if (outModel.Count(frame.Name()) > 0)
+    {
+      errors.push_back({ErrorCode::DUPLICATE_NAME,
+          "Frame with non-unique name [" + frame.Name() +
+          "] detected in model with name [" + _model->Name() +
+          "]."});
+      continue;
+    }
+    outModel.AddVertex(frame.Name(), sdf::FrameType::FRAME);
+  }
+
+  // add edges from joint to child frames
+  for (const auto &joint : _model->Joints())
+  {
+    auto jointId = outModel.VertexIdByName(joint.Name());
+    const auto &childFrameName = joint.ChildName();
+    if (outModel.Count(childFrameName) != 1)
+    {
+      errors.push_back({ErrorCode::JOINT_CHILD_LINK_INVALID,
+        "Child frame with name[" + childFrameName +
+        "] specified by joint with name[" + joint.Name() +
+        "] not found in model with name[" + _model->Name() + "]."});
+      continue;
+    }
+    auto childFrameId = outModel.VertexIdByName(childFrameName);
+    outModel.AddEdge({jointId, childFrameId}, true);
+  }
+
+  // add frame edges
+  for (const auto &frame : _model->Frames())
+  {
+    auto frameId = outModel.VertexIdByName(frame.Name());
+    // look for vertex in graph that matches attached_to value
+    std::string attachedTo = frame.AttachedTo();
+    if (attachedTo.empty() || attachedTo == "__model__")
+    {
+      // if the attached-to name is empty, use the scope context name
+      attachedTo = proxyModelFrameName;
+    }
+    if (outModel.Count(attachedTo) != 1)
+    {
+      errors.push_back({ErrorCode::FRAME_ATTACHED_TO_INVALID,
+          "attached_to name[" + attachedTo +
+          "] specified by frame with name[" + frame.Name() +
+          "] does not match a nested model, link, joint, or frame name "
+          "in model with name[" + _model->Name() + "]."});
+      continue;
+    }
+    auto attachedToId = outModel.VertexIdByName(attachedTo);
+    bool edgeData = true;
+    if (frame.Name() == frame.AttachedTo())
+    {
+      // set edgeData to false if attaches to itself, since this is invalid
+      edgeData = false;
+      errors.push_back({ErrorCode::FRAME_ATTACHED_TO_CYCLE,
+          "attached_to name[" + attachedTo +
+          "] is identical to frame name[" + frame.Name() +
+          "], causing a graph cycle "
+          "in model with name[" + _model->Name() + "]."});
+    }
+    outModel.AddEdge({frameId, attachedToId}, edgeData);
+  }
+
+
+  auto model = _model->ifaceModel.second;
+  // identify canonical link, which may be nested
+  const std::string canonicalLinkName = model->CanonicalLinkName();
+  const auto canonicalLinkId = outModel.VertexIdByName(canonicalLinkName);
+  if (!model->Static())
+  {
+    if (ignition::math::graph::kNullId == canonicalLinkId)
+    {
+      if (canonicalLinkName.empty())
+      {
+        if (_model->NestedModels().size() == 0u)
+        {
+          errors.push_back({ErrorCode::MODEL_WITHOUT_LINK,
+              "Interface model with name[" + _model->Name() +
+                  "] must have at least one link."});
+        }
+        else
+        {
+          // The canonical link was not found, but the model could have a
+          // descendant that has a static model, so simply create an edge to the
+          // first model and let the attached_to frame resolution take care of
+          // finding the canonical link
+          auto firstChildModelId =
+              outModel.VertexIdByName(_model->NestedModels().front()->Name());
+          outModel.AddEdge({proxyFrameVertexId, firstChildModelId}, true);
+        }
+      }
+      else
+      {
+        errors.push_back({ErrorCode::MODEL_CANONICAL_LINK_INVALID,
+            "canonical_link with name[" + canonicalLinkName +
+            "] not found in model with name[" + _model->Name() + "]."});
+      }
+      // return early
+      return errors;
+    }
+    else
+    {
+      // Add an edge from the implicit model frame to the canonical link found.
+      outModel.AddEdge({proxyFrameVertexId, canonicalLinkId}, true);
     }
   }
 
@@ -1138,22 +1298,8 @@ Errors buildPoseRelativeToGraph(
         }
       });
 
-  // add interface link vertices and default edge if relative_to is empty
-  addVerticesToGraph<InterfaceLink>(
-      outModel, _model, errors,
-      [&](const InterfaceLink *ifaceLink, auto ifaceLinkId)
-      {
-        // The pose of interface links is always given relative to the model
-        // frame, so add edge from implicit model frame to the interface link
-        outModel.AddEdge({modelFrameId, ifaceLinkId},
-                         ifaceLink->PoseInModelFrame());
-      });
-
   // add joint vertices
   addVerticesToGraph<Joint>(outModel, _model, errors);
-
-  // add interface joint vertices
-  addVerticesToGraph<InterfaceJoint>(outModel, _model, errors);
 
   // add frame vertices and default edge if both
   // relative_to and attached_to are empty
@@ -1167,15 +1313,14 @@ Errors buildPoseRelativeToGraph(
           outModel.AddEdge({modelFrameId, frameId}, frame->RawPose());
         }
       });
-  // add interface frame vertices
-  // TODO (azeey) Should we add a default edge if attached_to is empty?
-  addVerticesToGraph<InterfaceFrame>(outModel, _model, errors);
 
   // add nested model vertices
   addVerticesToGraph<Model>(outModel, _model, errors);
 
   // add nested interface model vertices
   addVerticesToGraph<InterfaceModel>(outModel, _model, errors);
+
+  addVerticesToGraph<MergedInterfaceModel>(outModel, _model, errors);
 
   // now that all vertices have been added to the graph,
   // add the edges that reference other vertices
@@ -1205,15 +1350,6 @@ Errors buildPoseRelativeToGraph(
           relativeTo = _joint->ChildLinkName();
         }
         return std::make_tuple(false, relativeTo, _joint->RawPose());
-      });
-
-  addEdgesToGraph<InterfaceJoint>(
-      outModel, _model, errors,
-      [](const InterfaceJoint *_joint)
-      {
-        return std::make_tuple(
-            false, _joint->ChildName(),
-            _joint->PoseInChildFrame());
       });
 
   for (uint64_t f = 0; f < _model->FrameCount(); ++f)
@@ -1265,55 +1401,6 @@ Errors buildPoseRelativeToGraph(
     outModel.AddEdge({relativeToId, frameId}, frame->RawPose());
   }
 
-  // addEdgesToGraph<InterfaceFrame>(
-  //     outModel, _model, errors,
-  //     [](const InterfaceFrame *_frame)
-  //     {
-  //       return std::make_tuple(
-  //           false, _frame->AttachedTo(),
-  //           _frame->PoseInAttachedToFrame());
-  //     });
-
-  for (uint64_t f = 0; f < _model->InterfaceFrameCount(); ++f)
-  {
-    auto frame = _model->InterfaceFrameByIndex(f);
-
-    // check if we've already added a default edge
-    if (frame->AttachedTo().empty())
-    {
-      // TODO (azeey) Error
-      errors.push_back(
-          {ErrorCode::FRAME_ATTACHED_TO_INVALID,
-           "frame with name[" + frame->Name() +
-               "] specifies an empty attached_to name in model with name[" +
-               _model->Name() + "]. This is forbidden for interface frames"});
-      continue;
-    }
-
-    auto frameId = outModel.VertexIdByName(frame->Name());
-    const std::string relativeTo = frame->AttachedTo();
-
-    // look for vertex in graph that matches relative_to value
-    if (outModel.Count(relativeTo) != 1)
-    {
-      errors.push_back({ErrorCode::FRAME_ATTACHED_TO_INVALID,
-          "attached_to name[" + relativeTo +
-          "] specified by frame with name[" + frame->Name() +
-          "] does not match a nested model, link, joint, or frame name "
-          "in model with name[" + _model->Name() + "]."});
-      continue;
-    }
-    auto relativeToId = outModel.VertexIdByName(relativeTo);
-    if (frame->Name() == relativeTo)
-    {
-      errors.push_back({ErrorCode::POSE_RELATIVE_TO_CYCLE,
-          "relative_to name[" + relativeTo +
-          "] is identical to frame name[" + frame->Name() +
-          "], causing a graph cycle "
-          "in model with name[" + _model->Name() + "]."});
-    }
-    outModel.AddEdge({relativeToId, frameId}, frame->PoseInAttachedToFrame());
-  }
 
   // addEdgesToGraph<Model>(
   //     outModel, _model, errors,
@@ -1370,6 +1457,7 @@ Errors buildPoseRelativeToGraph(
 
     outModel.AddEdge({relativeToId, nestedModelId}, resolvedModelPose);
   }
+
   for (uint64_t m = 0; m < _model->InterfaceModelCount(); ++m)
   {
     auto ifaceModel = _model->InterfaceModelByIndex(m).get();
@@ -1452,7 +1540,7 @@ Errors buildPoseRelativeToGraph(
 
 /////////////////////////////////////////////////
 Errors buildPoseRelativeToGraph(ScopedGraph<PoseRelativeToGraph> &_out,
-    const InterfaceModel *_model, bool)
+                                const InterfaceModel *_model, bool)
 {
   Errors errors;
 
@@ -1509,7 +1597,6 @@ Errors buildPoseRelativeToGraph(ScopedGraph<PoseRelativeToGraph> &_out,
             _nestedModel->ModelFramePoseInParentFrame());
       });
 
-
   // Add edges
   addEdgesToGraph<InterfaceJoint>(
       outModel, _model, errors,
@@ -1523,6 +1610,105 @@ Errors buildPoseRelativeToGraph(ScopedGraph<PoseRelativeToGraph> &_out,
   for (const auto &frame : _model->Frames())
   {
     if (frame.AttachedTo().empty())
+    {
+      continue;
+    }
+    auto frameId = outModel.VertexIdByName(frame.Name());
+    std::string relativeTo;
+    std::string typeForErrorMsg;
+    ErrorCode errorCode;
+    relativeTo = frame.AttachedTo();
+    typeForErrorMsg = "attached_to";
+    errorCode = ErrorCode::FRAME_ATTACHED_TO_INVALID;
+
+    // look for vertex in graph that matches relative_to value
+    if (outModel.Count(relativeTo) != 1)
+    {
+      errors.push_back({errorCode,
+          "attached_to name[" + relativeTo +
+          "] specified by frame with name[" + frame.Name() +
+          "] does not match a nested model, link, joint, or frame name "
+          "in model with name[" + _model->Name() + "]."});
+      continue;
+    }
+    auto relativeToId = outModel.VertexIdByName(relativeTo);
+    if (frame.Name() == relativeTo)
+    {
+      errors.push_back({ErrorCode::POSE_RELATIVE_TO_CYCLE,
+          "relative_to name[" + relativeTo +
+          "] is identical to frame name[" + frame.Name() +
+          "], causing a graph cycle "
+          "in model with name[" + _model->Name() + "]."});
+    }
+    outModel.AddEdge({relativeToId, frameId}, frame.PoseInAttachedToFrame());
+  }
+
+  return errors;
+}
+
+/////////////////////////////////////////////////
+Errors buildPoseRelativeToGraph(ScopedGraph<PoseRelativeToGraph> &_out,
+                                const MergedInterfaceModel *_model, bool)
+{
+  Errors errors;
+
+  if (!_model)
+  {
+    errors.push_back({ErrorCode::ELEMENT_INVALID,
+        "Invalid sdf::Model pointer."});
+    return errors;
+  }
+
+  auto outModel = _out;
+
+  const std::string proxyModelFrameName =
+      "_merged__" + _model->Name() + "__model__";
+  // Add a special frame that represents the frame of the merged model
+  auto proxyFrameVertexId =
+      outModel.AddVertex(proxyModelFrameName, sdf::FrameType::FRAME).Id();
+
+  outModel.AddEdge({_out.ScopeVertexId(), proxyFrameVertexId},
+                   _model->ifaceModel.second->ModelFramePoseInParentFrame());
+
+  // add link vertices and default edge if relative_to is empty
+  addVerticesToGraph<InterfaceLink>(outModel, _model, errors,
+      [&](const InterfaceLink *_link, auto _linkId)
+      {
+        // relative_to is empty, so add edge from implicit model frame to link
+        outModel.AddEdge({proxyFrameVertexId, _linkId},
+                         _link->PoseInModelFrame());
+      });
+
+  // add joint vertices
+  addVerticesToGraph<InterfaceJoint>(outModel, _model, errors);
+
+  // add frame vertices and default edge if both
+  // relative_to and attached_to are empty
+  addVerticesToGraph<InterfaceFrame>(outModel, _model, errors,
+      [&](const InterfaceFrame *_frame, auto _frameId)
+      {
+        // relative_to is empty, so add edge from implicit model frame to link
+        if (_frame->AttachedTo().empty() || _frame->AttachedTo() == "__model__")
+        {
+          outModel.AddEdge({proxyFrameVertexId, _frameId},
+                           _frame->PoseInAttachedToFrame());
+        }
+      });
+
+
+  // Add edges
+  addEdgesToGraph<InterfaceJoint>(
+      outModel, _model, errors,
+      [](const InterfaceJoint *_joint)
+      {
+        return std::make_tuple(
+            false, _joint->ChildName(),
+            _joint->PoseInChildFrame());
+      });
+
+  for (const auto &frame : _model->Frames())
+  {
+    if (frame.AttachedTo().empty() || frame.AttachedTo() == "__model__")
     {
       continue;
     }

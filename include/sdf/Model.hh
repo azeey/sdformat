@@ -41,6 +41,7 @@ namespace sdf
   class InterfaceJoint;
   class InterfaceLink;
   class InterfaceModel;
+  class MergedInterfaceModel;
   class Joint;
   class Link;
   class ParserConfig;
@@ -48,6 +49,7 @@ namespace sdf
   struct PoseRelativeToGraph;
   struct FrameAttachedToGraph;
   template <typename T> class ScopedGraph;
+  using InterfaceModelConstPtr = std::shared_ptr<const InterfaceModel>;
 
 
   class SDFORMAT_VISIBLE Model
@@ -422,11 +424,15 @@ namespace sdf
     private: void SetFrameAttachedToGraph(
         sdf::ScopedGraph<FrameAttachedToGraph> _graph);
 
+    private: const std::vector<std::pair<std::optional<sdf::NestedInclude>, 
+             sdf::InterfaceModelConstPtr>> &MergedInterfaceModels() const;
+
     /// \brief Allow Root::Load, World::SetPoseRelativeToGraph, or
     /// World::SetFrameAttachedToGraph to call SetPoseRelativeToGraph and
     /// SetFrameAttachedToGraph
     friend class Root;
     friend class World;
+    friend MergedInterfaceModel;
 
     /// \brief Private data pointer.
     IGN_UTILS_IMPL_PTR(dataPtr)

@@ -124,7 +124,7 @@ namespace sdf
   /// \param[in] _model Interface model from which to build attached_to graph.
   /// \return Errors.
   Errors buildFrameAttachedToGraph(ScopedGraph<FrameAttachedToGraph> &_out,
-              const InterfaceModel *_model, bool _isRoot = false);
+              const InterfaceModel* _model, bool _isRoot = false);
 
   /// \brief Build a FrameAttachedToGraph for a world.
   /// \param[out] _out Graph object to write.
@@ -147,7 +147,7 @@ namespace sdf
   /// \param[in] _model Interface model from which to build relative_to graph.
   /// \return Errors.
   Errors buildPoseRelativeToGraph(ScopedGraph<PoseRelativeToGraph> &_out,
-              const InterfaceModel *_model, bool _isRoot = false);
+              const InterfaceModel* _model, bool _isRoot = false);
 
   /// \brief Build a PoseRelativeToGraph for a world.
   /// \param[out] _out Graph object to write.

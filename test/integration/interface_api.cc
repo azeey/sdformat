@@ -555,7 +555,7 @@ TEST_F(InterfaceAPI, FrameSemantics)
   sdf::Root root;
   sdf::Errors errors = root.Load(testFile, config);
   EXPECT_TRUE(errors.empty()) << errors;
-  std::cout << root.DebugGenerateGraphiz()[1] << std::endl;
+  // std::cout << root.DebugGenerateGraphiz()[1] << std::endl;
 
   const sdf::World *world = root.WorldByIndex(0);
   ASSERT_NE(nullptr, world);
@@ -663,6 +663,8 @@ TEST_F(InterfaceAPI, Reposturing)
 
     return testing::AssertionSuccess();
   };
+
+  // std::cout << root.DebugGenerateGraphiz()[1] << std::endl;
   // There are two included models using a custom parser.
   // In each of the included models, there are two models and two links.
   ASSERT_EQ(8u, posesAfterReposture.size());
@@ -945,26 +947,26 @@ TEST_F(InterfaceAPIMergeInclude, Parsing)
   // for (const auto &g : root.DebugGenerateGraphiz()) {
   //   std::cout << g << "\n\n\n";
   // }
-  std::cout << root.DebugGenerateGraphiz()[1] << std::endl;
+  // std::cout << root.DebugGenerateGraphiz()[1] << std::endl;
 }
 
-TEST_F(InterfaceAPIMergeInclude, Parsing2)
-{
-  const std::string testSdf2 = R"(
-    <sdf version="1.9">
-      <model name="parent_model">
-        <include>
-          <uri>double_pendulum.toml</uri>
-          <name>test_name</name>
-        </include>
-      </model>
-    </sdf>)";
-  this->config.RegisterCustomModelParser(this->customTomlParser);
-  sdf::Root root2;
-  sdf::Errors errors2 = root2.LoadSdfString(testSdf2, this->config);
-  EXPECT_TRUE(errors2.empty()) << errors2;
-  std::cout << root2.DebugGenerateGraphiz()[1] << std::endl;
-}
+// TEST_F(InterfaceAPIMergeInclude, Parsing2)
+// {
+//   const std::string testSdf2 = R"(
+//     <sdf version="1.9">
+//       <model name="parent_model">
+//         <include>
+//           <uri>double_pendulum.toml</uri>
+//           <name>test_name</name>
+//         </include>
+//       </model>
+//     </sdf>)";
+//   this->config.RegisterCustomModelParser(this->customTomlParser);
+//   sdf::Root root2;
+//   sdf::Errors errors2 = root2.LoadSdfString(testSdf2, this->config);
+//   EXPECT_TRUE(errors2.empty()) << errors2;
+//   std::cout << root2.DebugGenerateGraphiz()[1] << std::endl;
+// }
 
 /////////////////////////////////////////////////
 TEST_F(InterfaceAPIMergeInclude, FrameSemantics)
@@ -1034,6 +1036,12 @@ TEST_F(InterfaceAPIMergeInclude, Reposturing)
     // <model name="M0"> <!-- Merged into parent model
     //   <pose relative_to="F1">0 0 0   0.1 0 0</pose> <!-- From //include -->
     //   <link name="base_link"/>
+    //   <frame name="frame1">
+    //     <pose>0 1 0   0 0 0</pose>
+    //   </frame>
+    //   <frame name="frame2" attached_to="frame1">
+    //     <pose>0 0 1   0 0 0</pose>
+    //   </frame>
     //   <model name="nested_model">
     //     <pose>3 0 0   0 0 0</pose>
     //     <link name="nested_link">
@@ -1045,14 +1053,18 @@ TEST_F(InterfaceAPIMergeInclude, Reposturing)
         *_include.LocalModelName(), makeRepostureFunc(absoluteModelName), false,
         "base_link", _include.IncludeRawPose().value_or(Pose3d{}));
     model->AddLink({"base_link", {}});
+    model->AddFrame({"frame1", "__model__", Pose3d(0, 1, 0, 0, 0, 0)});
+    model->AddFrame({"frame2", "frame1", Pose3d(0, 0, 1, 0, 0, 0)});
     elementsToReposture[absoluteModelName].emplace_back("base_link");
+    elementsToReposture[absoluteModelName].emplace_back("frame1");
+    elementsToReposture[absoluteModelName].emplace_back("frame2");
 
+    elementsToReposture[absoluteModelName].emplace_back("nested_model");
     const std::string absoluteNestedModelName =
         sdf::JoinName(absoluteModelName, "nested_model");
     auto nestedModel = std::make_shared<sdf::InterfaceModel>("nested_model",
         makeRepostureFunc(absoluteNestedModelName), false, "nested_link",
         Pose3d(3, 0, 0, 0, 0, 0));
-    elementsToReposture[absoluteNestedModelName].emplace_back("__model__");
 
     nestedModel->AddLink({"nested_link", Pose3d(0, 0, 0, 0.1, 0, 0)});
     elementsToReposture[absoluteNestedModelName].emplace_back("nested_link");
@@ -1071,8 +1083,8 @@ TEST_F(InterfaceAPIMergeInclude, Reposturing)
   sdf::Root root;
   sdf::Errors errors = root.Load(testFile, this->config);
   EXPECT_TRUE(errors.empty()) << errors;
-  std::cout << "Frame:\n" << root.DebugGenerateGraphiz()[0] << std::endl;
-  std::cout << "Pose:\n" << root.DebugGenerateGraphiz()[1] << std::endl;
+  // std::cout << "Frame:\n" << root.DebugGenerateGraphiz()[0] << std::endl;
+  // std::cout << "Pose:\n" << root.DebugGenerateGraphiz()[1] << std::endl;
   auto checkPose =
       [&posesAfterReposture](
           const std::string &_name, const Pose3d &_expectedPose)
@@ -1089,16 +1101,16 @@ TEST_F(InterfaceAPIMergeInclude, Reposturing)
 
     return testing::AssertionSuccess();
   };
-  for (const auto &[k, v] : posesAfterReposture)
-  {
-    std::cout << k << ": " << v << std::endl;
-  }
+  // for (const auto &[k, v] : posesAfterReposture)
+  // {
+  //   std::cout << k << ": " << v << std::endl;
+  // }
   // There is one included model using a custom parser containing two models and
   // two links.
-  ASSERT_EQ(3u, posesAfterReposture.size());
-  EXPECT_TRUE(checkPose("parent_model::base_link", {1, 2, 3, 0.1, 0, 0}));
+  ASSERT_EQ(5u, posesAfterReposture.size());
+  EXPECT_TRUE(checkPose("parent_model::base_link", {1, 2, 0, 0.1, 0, 0}));
   EXPECT_TRUE(
-      checkPose("parent_model::nested_model", {4, 2, 3, 0.1, 0, 0}));
+      checkPose("parent_model::nested_model", {4, 2, 0, 0, 0, 0}));
   EXPECT_TRUE(checkPose(
-      "parent_model::nested_model::nested_link", {4, 2, 3, 0.2, 0, 0}));
+      "parent_model::nested_model::nested_link", {4, 2, 0, 0.1, 0, 0}));
 }

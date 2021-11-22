@@ -90,7 +90,7 @@ class sdf::Model::Implementation
 
   /// \brief The interface models specified in this model.
   public: std::vector<std::pair<std::optional<sdf::NestedInclude>, 
-          sdf::InterfaceModelConstPtr>> interfaceMergedModels;
+          sdf::InterfaceModelConstPtr>> mergedInterfaceModels;
 
   /// \brief The interface links specified in this model.
   public: std::vector<const InterfaceLink *> interfaceLinks;
@@ -231,7 +231,7 @@ Errors Model::Load(sdf::ElementPtr _sdf, const ParserConfig &_config)
     }
     else
     {
-      this->dataPtr->interfaceMergedModels.emplace_back(ifaceInclude,
+      this->dataPtr->mergedInterfaceModels.emplace_back(ifaceInclude,
                                                         ifaceModel);
 
       // Merge the interface elements to the parent model
@@ -754,7 +754,7 @@ void Model::SetPoseRelativeToGraph(sdf::ScopedGraph<PoseRelativeToGraph> _graph)
       ifaceModelPair.second->InvokeRepostureFunction(childPoseGraph, {});
     }
   }
-  for (auto &ifaceModelPair : this->dataPtr->interfaceMergedModels)
+  for (auto &ifaceModelPair : this->dataPtr->mergedInterfaceModels)
   {
     ifaceModelPair.second->InvokeRepostureFunction(this->dataPtr->poseGraph,
                                                    this->Name());
@@ -955,4 +955,11 @@ bool sdf::operator!=(std::nullptr_t, const Model::CanonicalLinkPtr &_other)
     return true;
   }
   return false;
+}
+
+const std::vector<
+    std::pair<std::optional<sdf::NestedInclude>, sdf::InterfaceModelConstPtr>>
+    &Model::MergedInterfaceModels() const
+{
+  return this->dataPtr->mergedInterfaceModels;
 }
