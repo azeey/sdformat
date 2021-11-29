@@ -20,7 +20,6 @@
 #include <memory>
 #include <string>
 #include <utility>
-#include <variant>
 #include <ignition/math/Pose3.hh>
 #include <ignition/utils/ImplPtr.hh>
 #include "sdf/Element.hh"
@@ -54,17 +53,6 @@ namespace sdf
 
   class SDFORMAT_VISIBLE Model
   {
-    public: struct SDFORMAT_VISIBLE CanonicalLinkPtr
-    {
-      CanonicalLinkPtr(std::nullptr_t);
-      CanonicalLinkPtr(const sdf::Link *_link);
-      CanonicalLinkPtr(const sdf::InterfaceLink *_ifaceLink);
-      operator const sdf::Link *() const;
-      operator const sdf::InterfaceLink *() const;
-      explicit operator bool() const;
-      std::variant<const sdf::Link *, const sdf::InterfaceLink *> var;
-    };
-
     /// \brief Default constructor
     public: Model();
 
@@ -336,8 +324,8 @@ namespace sdf
     // TODO(addisu): If the canonical link is inside an interface model, this
     // function returns {nullptr, name}. This can be problematic for downstream
     // applications.
-    public: std::pair<CanonicalLinkPtr, std::string>
-            CanonicalLinkAndRelativeName() const;
+    public: std::pair<const Link *, std::string> CanonicalLinkAndRelativeName()
+        const;
 
     /// \brief Get the number of nested interface models that are immediate (not
     /// recursively nested) children of this Model object.
@@ -438,11 +426,6 @@ namespace sdf
     /// \brief Private data pointer.
     IGN_UTILS_IMPL_PTR(dataPtr)
   };
-
-  bool SDFORMAT_VISIBLE operator==(std::nullptr_t,
-                                   const Model::CanonicalLinkPtr &);
-  bool SDFORMAT_VISIBLE operator!=(std::nullptr_t,
-                                   const Model::CanonicalLinkPtr &);
   }
 }
 #endif

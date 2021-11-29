@@ -14,11 +14,9 @@
  * limitations under the License.
  *
 */
-#include <cstddef>
 #include <memory>
 #include <string>
 #include <unordered_set>
-#include <variant>
 #include <vector>
 #include <ignition/math/Pose3.hh>
 #include <ignition/math/SemanticVersion.hh>
@@ -630,8 +628,7 @@ const Link *Model::CanonicalLink() const
 }
 
 /////////////////////////////////////////////////
-std::pair<Model::CanonicalLinkPtr, std::string>
-Model::CanonicalLinkAndRelativeName() const
+std::pair<const Link*, std::string> Model::CanonicalLinkAndRelativeName() const
 {
   if (this->CanonicalLinkName().empty())
   {
@@ -643,7 +640,7 @@ Model::CanonicalLinkAndRelativeName() const
     if (this->InterfaceLinkCount() > 0)
     {
       auto firstLink = this->InterfaceLinkByIndex(0);
-      return std::make_pair(firstLink, firstLink->Name());
+      return std::make_pair(nullptr, firstLink->Name());
     }
     else if (this->ModelCount() > 0)
     {
@@ -908,59 +905,6 @@ const InterfaceFrame * Model::InterfaceFrameByIndex(
   if (_index < this->dataPtr->interfaceFrames.size())
     return this->dataPtr->interfaceFrames[_index];
   return nullptr;
-}
-
-/////////////////////////////////////////////////
-Model::CanonicalLinkPtr::CanonicalLinkPtr(std::nullptr_t)
-{
-}
-
-Model::CanonicalLinkPtr::CanonicalLinkPtr(const sdf::Link *_link) : var(_link)
-{
-}
-Model::CanonicalLinkPtr::CanonicalLinkPtr(const sdf::InterfaceLink *_ifaceLink)
-    : var(_ifaceLink)
-{
-}
-/////////////////////////////////////////////////
-Model::CanonicalLinkPtr::operator const Link *() const
-{
-  auto linkPtr = std::get_if<const Link *>(&this->var);
-  if (nullptr != linkPtr)
-    return *linkPtr;
-  return nullptr;
-}
-
-Model::CanonicalLinkPtr::operator const InterfaceLink *() const
-{
-  auto linkPtr = std::get_if<const InterfaceLink *>(&this->var);
-  if (nullptr != linkPtr)
-    return *linkPtr;
-  return nullptr;
-}
-
-Model::CanonicalLinkPtr::operator bool() const
-{
-  return (std::get_if<const Link *>(&this->var) != nullptr ||
-          std::get_if<const InterfaceLink *>(&this->var) != nullptr);
-}
-
-bool sdf::operator==(std::nullptr_t, const Model::CanonicalLinkPtr &_other)
-{
-  return !(nullptr != _other);
-}
-
-bool sdf::operator!=(std::nullptr_t, const Model::CanonicalLinkPtr &_other)
-{
-  if (nullptr != static_cast<const Link *>(_other))
-  {
-    return true;
-  }
-  if (nullptr != static_cast<const InterfaceLink *>(_other))
-  {
-    return true;
-  }
-  return false;
 }
 
 const std::vector<

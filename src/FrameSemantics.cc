@@ -200,7 +200,7 @@ FindSinkVertex(
 }
 
 /////////////////////////////////////////////////
-std::pair<Model::CanonicalLinkPtr, std::string>
+std::pair<const Link *, std::string>
     modelCanonicalLinkAndRelativeName(const Model *_model)
 {
   if (nullptr == _model)
