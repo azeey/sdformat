@@ -939,6 +939,12 @@ Model::CanonicalLinkPtr::operator const InterfaceLink *() const
   return nullptr;
 }
 
+Model::CanonicalLinkPtr::operator bool() const
+{
+  return (std::get_if<const Link *>(&this->var) != nullptr ||
+          std::get_if<const InterfaceLink *>(&this->var) != nullptr);
+}
+
 bool sdf::operator==(std::nullptr_t, const Model::CanonicalLinkPtr &_other)
 {
   return !(nullptr != _other);

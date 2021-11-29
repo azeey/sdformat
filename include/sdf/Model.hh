@@ -61,6 +61,7 @@ namespace sdf
       CanonicalLinkPtr(const sdf::InterfaceLink *_ifaceLink);
       operator const sdf::Link *() const;
       operator const sdf::InterfaceLink *() const;
+      explicit operator bool() const;
       std::variant<const sdf::Link *, const sdf::InterfaceLink *> var;
     };
 
