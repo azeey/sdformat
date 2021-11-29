@@ -52,48 +52,6 @@ void printGraph(const ScopedGraph<FrameAttachedToGraph> &_graph)
   std::cout << _graph.Graph() << std::endl;
 }
 
-class MergedInterfaceModel
-{
-  public: MergedInterfaceModel(std::pair<std::optional<sdf::NestedInclude>,
-                                         sdf::InterfaceModelConstPtr>
-                                   _ifaceModel)
-      : ifaceModel(std::move(_ifaceModel))
-  {
-  }
-
-  public: static const std::vector<std::pair<std::optional<sdf::NestedInclude>,
-                                             sdf::InterfaceModelConstPtr>> &
-          MergedModels(const sdf::Model *_model)
-  {
-    return _model->MergedInterfaceModels();
-  }
-  public: std::string Name() const
-  {
-    return this->ifaceModel.second->Name();
-  }
-
-  public: const std::vector<sdf::InterfaceLink> &Links() const
-  {
-    return this->ifaceModel.second->Links();
-  }
-
-  public: const std::vector<sdf::InterfaceJoint> &Joints() const
-  {
-    return this->ifaceModel.second->Joints();
-  }
-  public: const std::vector<sdf::InterfaceFrame> &Frames() const
-  {
-    return this->ifaceModel.second->Frames();
-  }
-  public: std::vector<sdf::InterfaceModelConstPtr> NestedModels() const
-  {
-    return this->ifaceModel.second->NestedModels();
-  }
-
-  public: std::pair<std::optional<sdf::NestedInclude>,
-                    sdf::InterfaceModelConstPtr> ifaceModel;
-};
-
 // The following two functions were originally submitted to ign-math,
 // but were not accepted as they were not generic enough.
 // For now, they will be kept here.
@@ -325,10 +283,61 @@ static Errors resolveModelPoseWithPlacementFrame(
   return errors;
 }
 
+class MergedInterfaceModel
+{
+  public: MergedInterfaceModel(std::pair<std::optional<sdf::NestedInclude>,
+                                         sdf::InterfaceModelConstPtr>
+                                   _ifaceModel)
+      : ifaceModel(std::move(_ifaceModel))
+  {
+  }
+
+  public: static const std::vector<std::pair<std::optional<sdf::NestedInclude>,
+                                             sdf::InterfaceModelConstPtr>> &
+          MergedModels(const sdf::Model *_model)
+  {
+    return _model->MergedInterfaceModels();
+  }
+  public: std::string Name() const
+  {
+    return this->ifaceModel.second->Name();
+  }
+
+  public: const std::vector<sdf::InterfaceLink> &Links() const
+  {
+    return this->ifaceModel.second->Links();
+  }
+
+  public: const std::vector<sdf::InterfaceJoint> &Joints() const
+  {
+    return this->ifaceModel.second->Joints();
+  }
+  public: const std::vector<sdf::InterfaceFrame> &Frames() const
+  {
+    return this->ifaceModel.second->Frames();
+  }
+  public: std::vector<sdf::InterfaceModelConstPtr> NestedModels() const
+  {
+    return this->ifaceModel.second->NestedModels();
+  }
+
+  public: std::pair<std::optional<sdf::NestedInclude>,
+                    sdf::InterfaceModelConstPtr> ifaceModel;
+};
+
+
 template <typename T>
 inline constexpr bool IsModel =
     std::is_same_v<T, sdf::Model> || std::is_same_v<T, sdf::InterfaceModel> ||
     std::is_same_v<T, sdf::MergedInterfaceModel>;
+
+template <typename T>
+inline constexpr bool IsInterfaceElement =
+    std::is_same_v<T, sdf::InterfaceModel> ||
+    std::is_same_v<T, sdf::MergedInterfaceModel> ||
+    std::is_same_v<T, sdf::InterfaceLink> ||
+    std::is_same_v<T, sdf::InterfaceFrame> ||
+    std::is_same_v<T, sdf::InterfaceJoint>;
 
 template <typename T>
 inline constexpr bool IsWorld = std::is_same_v<T, sdf::World>;
@@ -415,7 +424,7 @@ getElementAndFrameTypes(const ParentT &)
 template <typename ElementT, typename ParentT>
 struct ElementForEach;
 
-#define SPECIALIZE_ELEMENT_FOR_EACH(ElemName)                            \
+#define SPECIALIZE_ELEMENT_FOR_EACH(ElemName)                        \
   template <typename ParentT>                                        \
   struct ElementForEach<ElemName, ParentT>                           \
   {                                                                  \
@@ -437,7 +446,7 @@ struct ElementForEach;
     const ParentT &parent;                                           \
   };
 
-#define SPECIALIZE_INTERFACE_ELEMENT_FOR_EACH(ElemName)          \
+#define SPECIALIZE_INTERFACE_ELEMENT_FOR_EACH(ElemName)      \
   template <typename ParentT>                                \
   struct ElementForEach<Interface##ElemName, ParentT>        \
   {                                                          \
@@ -545,20 +554,51 @@ void addVerticesToGraph(ScopedGraph<GraphT> &_out, const ParentT *_parent,
 }
 
 template <typename ElementT, typename ParentT>
-void addEdgesToGraph(
+void addEdgesToPoseGraph(
     ScopedGraph<PoseRelativeToGraph> &_out, const ParentT *_parent,
     ScopedGraph<PoseRelativeToGraph>::VertexId _defaultRelativeToId,
-    Errors &_errors,
-    std::function<
-        std::tuple<std::string, ignition::math::Pose3d>(const ElementT *)>
-        _getRelativeTo = nullptr)
+    Errors &_errors)
 {
   ElementForEach<ElementT, ParentT> elemForEach(*_parent);
   elemForEach([&](const auto &item, const FrameType &,
                   const std::string &_elementType)
   {
     // check if we've already added a default edge
-    const auto &[relativeTo, poseInRelativeTo] = _getRelativeTo(&item);
+    std::string relativeTo = "";
+    ignition::math::Pose3d poseInRelativeTo{};
+    if constexpr (IsInterfaceElement<ElementT>)
+    {
+      if constexpr (std::is_same_v<ElementT, InterfaceLink>)
+      {
+        poseInRelativeTo = item.PoseInModelFrame();
+      }
+      else if constexpr (std::is_same_v<ElementT, InterfaceJoint>)
+      {
+        relativeTo = item.ChildName();
+        poseInRelativeTo = item.PoseInChildFrame();
+      }
+      else if constexpr (std::is_same_v<ElementT, InterfaceFrame>)
+      {
+        relativeTo = item.AttachedTo();
+        poseInRelativeTo = item.PoseInAttachedToFrame();
+      }
+      else if constexpr (std::is_same_v<ElementT, InterfaceModel>)
+      {
+        poseInRelativeTo = item.ModelFramePoseInParentFrame();
+      }
+    }
+    else
+    {
+      relativeTo = item.PoseRelativeTo();
+      poseInRelativeTo = item.RawPose();
+      if constexpr (std::is_same_v<ElementT, Joint>)
+      {
+        if (relativeTo.empty())
+        {
+          relativeTo = item.ChildLinkName();
+        }
+      }
+    }
 
     auto itemId = _out.VertexIdByName(item.Name());
     auto relativeToId = _defaultRelativeToId;
@@ -614,20 +654,19 @@ void addEdgesToGraph(
     }
   });
 }
+
 template <typename ModelT>
-void addInterfaceFrameEdgesToGraph(
+void addInterfaceFrameEdgesToPoseGraph(
     ScopedGraph<PoseRelativeToGraph> &_out, const ModelT *_model,
     ScopedGraph<PoseRelativeToGraph>::VertexId _defaultRelativeToId,
-    Errors &_errors,
-    std::function<
-        std::tuple<std::string, ignition::math::Pose3d>(const InterfaceFrame *)>
-        _getRelativeTo = nullptr)
+    Errors &_errors)
 {
   ElementForEach<InterfaceFrame, ModelT> elemForEach(*_model);
   elemForEach([&](const auto &frame, const FrameType &, const std::string &)
   {
-    // check if we've already added a default edge
-    const auto &[relativeTo, poseInRelativeTo] = _getRelativeTo(&frame);
+    const std::string relativeTo = frame.AttachedTo();
+    const ignition::math::Pose3d poseInRelativeTo =
+        frame.PoseInAttachedToFrame();
 
     auto frameId = _out.VertexIdByName(frame.Name());
 
@@ -733,108 +772,8 @@ void addFrameEdgesToPoseGraph(
   });
 }
 
-template <typename ElementT, typename ModelT>
-void addJointEdgesToGraph(
-    ScopedGraph<FrameAttachedToGraph> &_out, const ModelT *_model,
-    Errors &_errors)
-{
-  static_assert(std::is_same_v<ElementT, sdf::Joint> ||
-                    std::is_same_v<ElementT, sdf::InterfaceJoint>,
-                "This function requires ElementT to be either an sdf::Joint or "
-                "sdf::InterfaceJoint");
-
-  ElementForEach<ElementT, ModelT> elemForEach(*_model);
-  elemForEach([&](const auto &joint, const sdf::FrameType,
-                  const std::string &_elementType)
-  {
-    auto jointId = _out.VertexIdByName(joint.Name());
-    std::string childFrameName;
-    if constexpr (std::is_same_v<ElementT, sdf::Joint>)
-    {
-      childFrameName = joint.ChildLinkName();
-    }
-    else
-    {
-      childFrameName = joint.ChildName();
-    }
-
-    if (_out.Count(childFrameName) != 1)
-    {
-      _errors.push_back(
-          {ErrorCode::JOINT_CHILD_LINK_INVALID,
-            "Child frame with name[" + childFrameName + "] specified by " +
-                lowercase(_elementType) + " with name[" + joint.Name() +
-                "] not found in model with name[" + _model->Name() + "]."});
-      return;
-    }
-    auto childFrameId = _out.VertexIdByName(childFrameName);
-    _out.AddEdge({jointId, childFrameId}, true);
-  });
-}
-
-template <typename ElementT, typename ParentT>
-void addFrameEdgesToGraph(ScopedGraph<FrameAttachedToGraph> &_out,
-                          const ParentT *_parent,
-                          const std::string &_defaultAttachedTo,
-                          Errors &_errors)
-{
-  static_assert(std::is_same_v<ElementT, sdf::Frame> ||
-                    std::is_same_v<ElementT, sdf::InterfaceFrame>,
-                "This function requires ElementT to be either an sdf::Joint or "
-                "sdf::InterfaceJoint");
-  ElementForEach<ElementT, ParentT> elemForEach(*_parent);
-  elemForEach([&](const auto &frame, const FrameType &,
-                  const std::string &_elementType)
-  {
-    auto frameId = _out.VertexIdByName(frame.Name());
-    // look for vertex in graph that matches attached_to value
-    std::string attachedTo = frame.AttachedTo();
-    // TODO (azeey) attachedTo=="__model__" should not be here.
-    if (attachedTo.empty() || attachedTo == "__model__")
-    {
-      // if the attached-to name is empty, use the default attachedTo
-      attachedTo = _defaultAttachedTo;
-    }
-
-    if (_out.Count(attachedTo) != 1)
-    {
-        std::stringstream errMsg;
-        errMsg << "attached_to name[" << attachedTo << "] specified by "
-               << lowercase(_elementType) << " with name[" << frame.Name()
-               << "] does not match a";
-        if constexpr (IsWorld<ParentT>)
-        {
-          errMsg << " model or frame name ";
-        }
-        else
-        {
-          errMsg << " nested model, link, joint, or frame name ";
-        }
-        errMsg << "in " + lowercase(elemToString(_parent)) + " with name[" +
-                      _parent->Name() + "].";
-
-        _errors.push_back({ErrorCode::FRAME_ATTACHED_TO_INVALID, errMsg.str()});
-        return;
-    }
-
-    auto attachedToId = _out.VertexIdByName(attachedTo);
-    bool edgeData = true;
-    if (frame.Name() == frame.AttachedTo())
-    {
-      // set edgeData to false if attaches to itself, since this is invalid
-      edgeData = false;
-      _errors.push_back({ErrorCode::FRAME_ATTACHED_TO_CYCLE,
-          "attached_to name[" + attachedTo +
-          "] is identical to frame name[" + frame.Name() +
-          "], causing a graph cycle in " + lowercase(elemToString(_parent)) +
-          " with name[" + _parent->Name() + "]."});
-    }
-    _out.AddEdge({frameId, attachedToId}, edgeData);
-  });
-}
-
 template <typename ParentT>
-void addInterfaceModelEdgesToGraph(
+void addInterfaceModelEdgesToPoseGraph(
     ScopedGraph<PoseRelativeToGraph> &_out, const ParentT *_parent,
     ScopedGraph<PoseRelativeToGraph>::VertexId _defaultRelativeToId,
     Errors &_errors)
@@ -916,6 +855,105 @@ void addInterfaceModelEdgesToGraph(
   });
 }
 
+template <typename ElementT, typename ModelT>
+void addJointEdgesToFrameGraph(
+    ScopedGraph<FrameAttachedToGraph> &_out, const ModelT *_model,
+    Errors &_errors)
+{
+  static_assert(std::is_same_v<ElementT, sdf::Joint> ||
+                    std::is_same_v<ElementT, sdf::InterfaceJoint>,
+                "This function requires ElementT to be either an sdf::Joint or "
+                "sdf::InterfaceJoint");
+
+  ElementForEach<ElementT, ModelT> elemForEach(*_model);
+  elemForEach([&](const auto &joint, const sdf::FrameType,
+                  const std::string &_elementType)
+  {
+    auto jointId = _out.VertexIdByName(joint.Name());
+    std::string childFrameName;
+    if constexpr (std::is_same_v<ElementT, sdf::Joint>)
+    {
+      childFrameName = joint.ChildLinkName();
+    }
+    else
+    {
+      childFrameName = joint.ChildName();
+    }
+
+    if (_out.Count(childFrameName) != 1)
+    {
+      _errors.push_back(
+          {ErrorCode::JOINT_CHILD_LINK_INVALID,
+            "Child frame with name[" + childFrameName + "] specified by " +
+                lowercase(_elementType) + " with name[" + joint.Name() +
+                "] not found in model with name[" + _model->Name() + "]."});
+      return;
+    }
+    auto childFrameId = _out.VertexIdByName(childFrameName);
+    _out.AddEdge({jointId, childFrameId}, true);
+  });
+}
+
+template <typename ElementT, typename ParentT>
+void addFrameEdgesToFrameGraph(ScopedGraph<FrameAttachedToGraph> &_out,
+                               const ParentT *_parent,
+                               const std::string &_defaultAttachedTo,
+                               Errors &_errors, bool isMerged=false)
+{
+  static_assert(std::is_same_v<ElementT, sdf::Frame> ||
+                    std::is_same_v<ElementT, sdf::InterfaceFrame>,
+                "This function requires ElementT to be either an sdf::Frame or "
+                "sdf::InterfaceFrame");
+  ElementForEach<ElementT, ParentT> elemForEach(*_parent);
+  elemForEach([&](const auto &frame, const FrameType &,
+                  const std::string &_elementType)
+  {
+    auto frameId = _out.VertexIdByName(frame.Name());
+    // look for vertex in graph that matches attached_to value
+    std::string attachedTo = frame.AttachedTo();
+    if (attachedTo.empty() || (isMerged && attachedTo == "__model__"))
+    {
+      // if the attached-to name is empty, use the default attachedTo
+      attachedTo = _defaultAttachedTo;
+    }
+
+    if (_out.Count(attachedTo) != 1)
+    {
+        std::stringstream errMsg;
+        errMsg << "attached_to name[" << attachedTo << "] specified by "
+               << lowercase(_elementType) << " with name[" << frame.Name()
+               << "] does not match a";
+        if constexpr (IsWorld<ParentT>)
+        {
+          errMsg << " model or frame name ";
+        }
+        else
+        {
+          errMsg << " nested model, link, joint, or frame name ";
+        }
+        errMsg << "in " + lowercase(elemToString(_parent)) + " with name[" +
+                      _parent->Name() + "].";
+
+        _errors.push_back({ErrorCode::FRAME_ATTACHED_TO_INVALID, errMsg.str()});
+        return;
+    }
+
+    auto attachedToId = _out.VertexIdByName(attachedTo);
+    bool edgeData = true;
+    if (frame.Name() == frame.AttachedTo())
+    {
+      // set edgeData to false if attaches to itself, since this is invalid
+      edgeData = false;
+      _errors.push_back({ErrorCode::FRAME_ATTACHED_TO_CYCLE,
+          "attached_to name[" + attachedTo +
+          "] is identical to frame name[" + frame.Name() +
+          "], causing a graph cycle in " + lowercase(elemToString(_parent)) +
+          " with name[" + _parent->Name() + "]."});
+    }
+    _out.AddEdge({frameId, attachedToId}, edgeData);
+  });
+}
+
 /////////////////////////////////////////////////
 Errors buildFrameAttachedToGraph(
     ScopedGraph<FrameAttachedToGraph> &_out, const Model *_model, bool _isRoot)
@@ -994,10 +1032,10 @@ Errors buildFrameAttachedToGraph(
   addVerticesToGraph<MergedInterfaceModel>(outModel, _model, errors);
 
   // add edges from joint to child frames
-  addJointEdgesToGraph<Joint>(outModel, _model, errors);
+  addJointEdgesToFrameGraph<Joint>(outModel, _model, errors);
 
   // add frame edges
-  addFrameEdgesToGraph<Frame>(outModel, _model, scopeContextName, errors);
+  addFrameEdgesToFrameGraph<Frame>(outModel, _model, scopeContextName, errors);
 
   // identify canonical link, which may be nested
   const auto[canonicalLink, canonicalLinkName] =
@@ -1113,11 +1151,11 @@ Errors buildFrameAttachedToGraph(ScopedGraph<FrameAttachedToGraph> &_out,
   addVerticesToGraph<InterfaceModel>(outModel, _model, errors);
 
   // add edges from joint to child frames
-  addJointEdgesToGraph<InterfaceJoint>(outModel, _model, errors);
+  addJointEdgesToFrameGraph<InterfaceJoint>(outModel, _model, errors);
 
   // add frame edges
-  addFrameEdgesToGraph<InterfaceFrame>(outModel, _model, scopeContextName,
-                                       errors);
+  addFrameEdgesToFrameGraph<InterfaceFrame>(outModel, _model, scopeContextName,
+                                            errors);
 
   // identify canonical link, which may be nested
   const std::string canonicalLinkName = _model->CanonicalLinkName();
@@ -1194,11 +1232,11 @@ Errors buildFrameAttachedToGraph(ScopedGraph<FrameAttachedToGraph> &_out,
   addVerticesToGraph<InterfaceFrame>(outModel, _model, errors);
 
   // add edges from joint to child frames
-  addJointEdgesToGraph<InterfaceJoint>(outModel, _model, errors);
+  addJointEdgesToFrameGraph<InterfaceJoint>(outModel, _model, errors);
 
   // add frame edges
-  addFrameEdgesToGraph<InterfaceFrame>(outModel, _model, proxyModelFrameName,
-                                       errors);
+  addFrameEdgesToFrameGraph<InterfaceFrame>(outModel, _model,
+                                            proxyModelFrameName, errors, true);
 
   auto model = _model->ifaceModel.second;
   // identify canonical link, which may be nested
@@ -1280,7 +1318,7 @@ Errors buildFrameAttachedToGraph(
   addVerticesToGraph<Frame>(_out, _world, errors);
 
   // add frame edges
-  addFrameEdgesToGraph<Frame>(_out, _world, scopeContextName, errors);
+  addFrameEdgesToFrameGraph<Frame>(_out, _world, scopeContextName, errors);
 
   return errors;
 }
@@ -1346,38 +1384,15 @@ Errors buildPoseRelativeToGraph(
   // now that all vertices have been added to the graph,
   // add the edges that reference other vertices
 
-  addEdgesToGraph<Link>(
-      outModel, _model, modelFrameId, errors,
-      [](const Link *_link)
-      {
-        // check if we've already added a default edge
-        return std::make_tuple(_link->PoseRelativeTo(), _link->RawPose());
-      });
+  addEdgesToPoseGraph<Link>(outModel, _model, modelFrameId, errors);
 
-  addEdgesToGraph<Joint>(
-      outModel, _model, modelFrameId, errors,
-      [](const Joint *_joint)
-      {
-        std::string relativeTo = _joint->PoseRelativeTo();
-        if (relativeTo.empty())
-        {
-          // since nothing else was specified, use the joint's child frame
-          relativeTo = _joint->ChildLinkName();
-        }
-        return std::make_tuple(relativeTo, _joint->RawPose());
-      });
+  addEdgesToPoseGraph<Joint>(outModel, _model, modelFrameId, errors);
 
   addFrameEdgesToPoseGraph(outModel, _model, modelFrameId, errors);
 
-  addEdgesToGraph<Model>(
-      outModel, _model, modelFrameId, errors,
-      [](const Model *_nestedModel)
-      {
-        return std::make_tuple(_nestedModel->PoseRelativeTo(),
-                               _nestedModel->RawPose());
-      });
+  addEdgesToPoseGraph<Model>(outModel, _model, modelFrameId, errors);
 
-  addInterfaceModelEdgesToGraph(outModel, _model, modelFrameId, errors);
+  addInterfaceModelEdgesToPoseGraph(outModel, _model, modelFrameId, errors);
 
   if (_isRoot)
   {
@@ -1439,35 +1454,13 @@ Errors buildPoseRelativeToGraph(ScopedGraph<PoseRelativeToGraph> &_out,
   addVerticesToGraph<InterfaceModel>(outModel, _model, errors);
 
   // Add edges
-  addEdgesToGraph<InterfaceLink>(
-      outModel, _model, modelFrameId, errors,
-      [](const InterfaceLink *_link)
-      {
-        // check if we've already added a default edge
-        return std::make_tuple("", _link->PoseInModelFrame());
-      });
+  addEdgesToPoseGraph<InterfaceLink>(outModel, _model, modelFrameId, errors);
 
-  addEdgesToGraph<InterfaceJoint>(
-      outModel, _model, modelFrameId, errors,
-      [](const InterfaceJoint *_joint)
-      {
-        return std::make_tuple(_joint->ChildName(), _joint->PoseInChildFrame());
-      });
+  addEdgesToPoseGraph<InterfaceJoint>(outModel, _model, modelFrameId, errors);
 
-  addInterfaceFrameEdgesToGraph(
-      outModel, _model, modelFrameId, errors,
-      [](const InterfaceFrame *_frame)
-      {
-        return std::make_tuple(_frame->AttachedTo(),
-                               _frame->PoseInAttachedToFrame());
-      });
+  addInterfaceFrameEdgesToPoseGraph(outModel, _model, modelFrameId, errors);
 
-  addEdgesToGraph<InterfaceModel>(
-      outModel, _model, modelFrameId, errors,
-      [](const InterfaceModel *_ifaceModel)
-      {
-        return std::make_tuple("", _ifaceModel->ModelFramePoseInParentFrame());
-      });
+  addEdgesToPoseGraph<InterfaceModel>(outModel, _model, modelFrameId, errors);
   return errors;
 }
 
@@ -1505,27 +1498,14 @@ Errors buildPoseRelativeToGraph(ScopedGraph<PoseRelativeToGraph> &_out,
   addVerticesToGraph<InterfaceFrame>(outModel, _model, errors);
 
   // Add edges
-  addEdgesToGraph<InterfaceLink>(
-      outModel, _model, proxyFrameVertexId, errors,
-      [](const InterfaceLink *_link)
-      {
-        return std::make_tuple("", _link->PoseInModelFrame());
-      });
+  addEdgesToPoseGraph<InterfaceLink>(outModel, _model, proxyFrameVertexId,
+                                     errors);
 
-  addEdgesToGraph<InterfaceJoint>(
-      outModel, _model, proxyFrameVertexId, errors,
-      [](const InterfaceJoint *_joint)
-      {
-        return std::make_tuple(_joint->ChildName(), _joint->PoseInChildFrame());
-      });
+  addEdgesToPoseGraph<InterfaceJoint>(outModel, _model, proxyFrameVertexId,
+                                      errors);
 
-  addInterfaceFrameEdgesToGraph(
-      outModel, _model, proxyFrameVertexId, errors,
-      [](const InterfaceFrame *_frame)
-      {
-        return std::make_tuple(_frame->AttachedTo(),
-                               _frame->PoseInAttachedToFrame());
-      });
+  addInterfaceFrameEdgesToPoseGraph(outModel, _model, proxyFrameVertexId,
+                                    errors);
 
   return errors;
 }
@@ -1570,15 +1550,9 @@ Errors buildPoseRelativeToGraph(
 
   // now that all vertices have been added to the graph,
   // add the edges that reference other vertices
-  addEdgesToGraph<Model>(
-      _out, _world, worldFrameId, errors,
-      [](const Model *_nestedModel)
-      {
-        return std::make_tuple(_nestedModel->PoseRelativeTo(),
-                               _nestedModel->RawPose());
-      });
+  addEdgesToPoseGraph<Model>(_out, _world, worldFrameId, errors);
 
-  addInterfaceModelEdgesToGraph(_out, _world, worldFrameId, errors);
+  addInterfaceModelEdgesToPoseGraph(_out, _world, worldFrameId, errors);
   addFrameEdgesToPoseGraph(_out, _world, worldFrameId, errors);
 
   return errors;
