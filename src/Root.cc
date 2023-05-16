@@ -284,7 +284,10 @@ Errors Root::Load(SDFPtr _sdf, const ParserConfig &_config)
 
       Errors worldErrors = world.Load(elem, _config);
 
-      this->dataPtr->UpdateGraphs(world, worldErrors);
+      if (_config.BuildFrameGraphDuringLoad())
+      {
+        this->dataPtr->UpdateGraphs(world, worldErrors);
+      }
 
       // Attempt to load the world
       if (worldErrors.empty())
@@ -325,7 +328,10 @@ Errors Root::Load(SDFPtr _sdf, const ParserConfig &_config)
     }
     this->dataPtr->modelLightOrActor = std::move(models.front());
     sdf::Model &model = std::get<sdf::Model>(this->dataPtr->modelLightOrActor);
-    this->dataPtr->UpdateGraphs(model, errors);
+    if (_config.BuildFrameGraphDuringLoad())
+    {
+      this->dataPtr->UpdateGraphs(model, errors);
+    }
   }
 
   // Load all the lights.
@@ -382,12 +388,15 @@ Errors Root::Load(SDFPtr _sdf, const ParserConfig &_config)
     }
   }
 
-  // Check that Joint parent and child names resolve to valid and
-  // different frames.
-  checkJointParentChildNames(this, errors);
+  if (_config.BuildFrameGraphDuringLoad())
+  {
+    // Check that Joint parent and child names resolve to valid and
+    // different frames.
+    checkJointParentChildNames(this, errors);
 
-  // Check that //axis*/xyz/@expressed_in values specify valid frames.
-  checkJointAxisExpressedInValues(this, errors);
+    // Check that //axis*/xyz/@expressed_in values specify valid frames.
+    checkJointAxisExpressedInValues(this, errors);
+  }
 
   return errors;
 }

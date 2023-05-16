@@ -56,6 +56,9 @@ class sdf::ParserConfig::Implementation
 
   /// \brief Flag to expand URIs where possible store the resolved paths
   public: bool storeResolvedURIs = false;
+
+  // TODO(azeey) docs
+  public: bool buildFrameGraphDuringLoad = false;
 };
 
 
@@ -191,5 +194,17 @@ void ParserConfig::SetStoreResovledURIs(bool _resolveURI)
 bool ParserConfig::StoreResolvedURIs() const
 {
   return this->dataPtr->storeResolvedURIs;
+}
+
+/////////////////////////////////////////////////
+void ParserConfig::SetBuildFrameGraphDuringLoad(bool _buildFrameGraph)
+{
+  this->dataPtr->buildFrameGraphDuringLoad = _buildFrameGraph;
+}
+
+/////////////////////////////////////////////////
+bool ParserConfig::BuildFrameGraphDuringLoad() const
+{
+  return this->dataPtr->buildFrameGraphDuringLoad;
 }
 

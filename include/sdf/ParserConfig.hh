@@ -195,6 +195,10 @@ class SDFORMAT_VISIBLE ParserConfig
   /// store them.  False to preserve original URIs
   public: bool StoreResolvedURIs() const;
 
+  // TODO(azeey) docs
+  public: bool BuildFrameGraphDuringLoad() const;
+  // TODO(azeey) docs
+  public: void SetBuildFrameGraphDuringLoad(bool _buildFrameGraph);
   /// \brief Private data pointer.
   GZ_UTILS_IMPL_PTR(dataPtr)
 };
