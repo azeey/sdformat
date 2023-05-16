@@ -466,6 +466,13 @@ const Model *Root::Model() const
 }
 
 /////////////////////////////////////////////////
+Model *Root::Model()
+{
+  return const_cast<sdf::Model*>(
+      static_cast<const sdf::Root*>(this)->Model());
+}
+
+/////////////////////////////////////////////////
 void Root::SetModel(const sdf::Model &_model)
 {
   this->dataPtr->modelLightOrActor = _model;
