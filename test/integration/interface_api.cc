@@ -1273,6 +1273,34 @@ TEST_F(InterfaceAPIMergeInclude, JointModelChild)
 }
 
 /////////////////////////////////////////////////
+TEST_F(InterfaceAPIMergeInclude, DeeplyNestedMergeInclude)
+{
+  auto checkParentNameParser =
+      [this](const sdf::NestedInclude &_include, sdf::Errors &_errors)
+  {
+    EXPECT_EQ("parent_model", _include.AbsoluteParentName());
+    return nullptr;
+  };
+
+  // this->config.RegisterCustomModelParser(checkParentNameParser);
+  this->config.RegisterCustomModelParser(customTomlParser);
+
+  const std::string testSdf = R"(
+  <sdf version="1.10">
+    <model name="parent_model">
+      <include merge="false">
+        <uri>merge_include_with_interface_api.sdf</uri>
+      </include>
+    </model>
+  </sdf>)";
+
+  sdf::Root root;
+  sdf::Errors errors = root.LoadSdfString(testSdf, this->config);
+  EXPECT_TRUE(errors.empty()) << errors;
+  std::cout << root.Element()->ToString("") << std::endl;
+}
+
+/////////////////////////////////////////////////
 TEST_F(InterfaceAPI, JointParentOrChildInNestedModel)
 {
   this->config.RegisterCustomModelParser(customTomlParser);
