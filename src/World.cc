@@ -1183,3 +1183,10 @@ void World::AddPlugin(const Plugin &_plugin)
 {
   this->dataPtr->plugins.push_back(_plugin);
 }
+
+/////////////////////////////////////////////////
+sdf::SemanticPose World::SemanticPose() const
+{
+  return {"world", gz::math::Pose3d::Zero, "", "world",
+          this->dataPtr->poseRelativeToGraph};
+}

@@ -114,6 +114,7 @@ namespace sdf
     friend class Model;
     friend class Sensor;
     friend class Visual;
+    friend class World;
 
     /// \brief Private data pointer.
     GZ_UTILS_IMPL_PTR(dataPtr)

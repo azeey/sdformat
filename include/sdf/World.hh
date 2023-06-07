@@ -31,6 +31,7 @@
 #include "sdf/ParserConfig.hh"
 #include "sdf/Plugin.hh"
 #include "sdf/Scene.hh"
+#include "sdf/SemanticPose.hh"
 #include "sdf/Types.hh"
 #include "sdf/sdf_config.h"
 #include "sdf/system_util.hh"
@@ -515,6 +516,11 @@ namespace sdf
     /// \brief Add a plugin to this object.
     /// \param[in] _plugin Plugin to add.
     public: void AddPlugin(const Plugin &_plugin);
+
+    /// \brief Get SemanticPose object of this object to aid in resolving
+    /// poses.
+    /// \return SemanticPose object for this link.
+    public: sdf::SemanticPose SemanticPose() const;
 
     /// \brief Give the Scoped PoseRelativeToGraph to be passed on to child
     /// entities for resolving poses. This is private and is intended to be
