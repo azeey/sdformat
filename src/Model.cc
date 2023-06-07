@@ -324,17 +324,6 @@ Errors Model::Load(sdf::ElementPtr _sdf, const ParserConfig &_config)
     frameNames.insert(linkName);
   }
 
-  // If the model is not static and has no nested models:
-  // Require at least one (interface) link so the implicit model frame can be
-  // attached to something.
-  if (!this->Static() && this->dataPtr->links.empty() &&
-      this->dataPtr->interfaceLinks.empty() && this->dataPtr->models.empty() &&
-      this->dataPtr->interfaceModels.empty())
-  {
-    errors.push_back({ErrorCode::MODEL_WITHOUT_LINK,
-                     "A model must have at least one link."});
-  }
-
   // Load all the joints.
   Errors jointLoadErrors = loadUniqueRepeated<Joint>(_sdf, "joint",
     this->dataPtr->joints);
