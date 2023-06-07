@@ -191,6 +191,11 @@ static std::optional<std::string> computeAbsoluteName(
   {
     if (parent->HasAttribute("name"))
     {
+      if (parent->GetName() == "model" &&
+          parent->Get<bool>("merge", false).first)
+      {
+        continue;
+      }
       names.push_back(parent->GetAttribute("name")->GetAsString());
     }
     else

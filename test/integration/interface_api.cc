@@ -397,25 +397,52 @@ TEST_F(InterfaceAPI, TomlParserModelInclude)
   TomlParserTest(interfaceModel);
 }
 
+/////////////////////////////////////////////////
+TEST_F(InterfaceAPI, DeeplyNestedModel)
+{
+  const std::string testSdf = R"(
+  <sdf version="1.10">
+    <model name="grand_parent_model">
+      <include>
+        <uri>model://model_include_with_interface_api.sdf</uri>
+      </include>
+    </model>
+  </sdf>)";
+
+  this->config.AddURIPath("model://", sdf::testing::TestFile("sdf"));
+  this->config.RegisterCustomModelParser(this->customTomlParser);
+  sdf::Root root;
+  sdf::Errors errors = root.LoadSdfString(testSdf, this->config);
+  EXPECT_TRUE(errors.empty()) << errors;
+  const sdf::Model *grandParentModel = root.Model();
+  ASSERT_NE(nullptr, grandParentModel);
+  const sdf::Model *parentModel = grandParentModel->ModelByIndex(0);
+  ASSERT_NE(nullptr, parentModel);
+  auto interfaceModel = parentModel->InterfaceModelByIndex(0);
+  ASSERT_NE(nullptr, interfaceModel);
+  SCOPED_TRACE("DeeplyNestedModel");
+  TomlParserTest(interfaceModel);
+}
+
+gz::math::Pose3d resolvePoseNoErrors(const sdf::SemanticPose &_semPose,
+                                     const std::string &_relativeTo = "")
+{
+  gz::math::Pose3d pose;
+  sdf::Errors resolveErrors = _semPose.Resolve(pose, _relativeTo);
+  EXPECT_TRUE(resolveErrors.empty()) << resolveErrors;
+  return pose;
+};
+std::string resolveAttachedToNoErrors(const sdf::Frame &_frame)
+{
+  std::string resolvedBody;
+  sdf::Errors resolveErrors = _frame.ResolveAttachedToBody(resolvedBody);
+  EXPECT_TRUE(resolveErrors.empty()) << resolveErrors;
+  return resolvedBody;
+};
+
 void InterfaceAPI::CheckFrameSemantics(const sdf::World *world)
 {
   using gz::math::Pose3d;
-
-  auto resolvePoseNoErrors =
-      [](const sdf::SemanticPose &_semPose, const std::string &_relativeTo = "")
-  {
-    Pose3d pose;
-    sdf::Errors resolveErrors = _semPose.Resolve(pose, _relativeTo);
-    EXPECT_TRUE(resolveErrors.empty()) << resolveErrors;
-    return pose;
-  };
-  auto resolveAttachedToNoErrors = [](const sdf::Frame &_frame)
-  {
-    std::string resolvedBody;
-    sdf::Errors resolveErrors = _frame.ResolveAttachedToBody(resolvedBody);
-    EXPECT_TRUE(resolveErrors.empty()) << resolveErrors;
-    return resolvedBody;
-  };
 
   {
     const sdf::Frame *frame = world->FrameByName("F0");
@@ -908,6 +935,7 @@ TEST_F(InterfaceAPI, NameCollision)
   }
 }
 
+/////////////////////////////////////////////////
 class InterfaceAPIMergeInclude : public InterfaceAPI
 {
 };
@@ -1273,23 +1301,24 @@ TEST_F(InterfaceAPIMergeInclude, JointModelChild)
 }
 
 /////////////////////////////////////////////////
-TEST_F(InterfaceAPIMergeInclude, DeeplyNestedMergeInclude)
+TEST_F(InterfaceAPIMergeInclude, DeeplyNestedMergeInclude1a)
 {
   auto checkParentNameParser =
       [this](const sdf::NestedInclude &_include, sdf::Errors &_errors)
   {
-    EXPECT_EQ("parent_model", _include.AbsoluteParentName());
-    return nullptr;
+    EXPECT_EQ("parent_model::intermediate_model",
+              _include.AbsoluteParentName());
+    return this->customTomlParser(_include, _errors);
   };
 
-  // this->config.RegisterCustomModelParser(checkParentNameParser);
-  this->config.RegisterCustomModelParser(customTomlParser);
+  this->config.RegisterCustomModelParser(checkParentNameParser);
 
   const std::string testSdf = R"(
   <sdf version="1.10">
     <model name="parent_model">
-      <include merge="false">
-        <uri>merge_include_with_interface_api.sdf</uri>
+      <include>
+        <uri>merge_include_with_interface_api_1.sdf</uri>
+        <pose>0 10 0   0 0 0</pose>
       </include>
     </model>
   </sdf>)";
@@ -1297,7 +1326,111 @@ TEST_F(InterfaceAPIMergeInclude, DeeplyNestedMergeInclude)
   sdf::Root root;
   sdf::Errors errors = root.LoadSdfString(testSdf, this->config);
   EXPECT_TRUE(errors.empty()) << errors;
-  std::cout << root.Element()->ToString("") << std::endl;
+  const auto* parentModel = root.Model();
+  ASSERT_NE(nullptr, parentModel);
+  using gz::math::Pose3d;
+  EXPECT_EQ(
+      Pose3d(0, 10, 10, 0, 0, 0),
+      resolvePoseNoErrors(parentModel->SemanticPose(),
+                          "parent_model::intermediate_model::double_pendulum")
+          .Inverse());
+}
+
+/////////////////////////////////////////////////
+TEST_F(InterfaceAPIMergeInclude, DeeplyNestedMergeInclude1b)
+{
+  auto checkParentNameParser =
+      [this](const sdf::NestedInclude &_include, sdf::Errors &_errors)
+  {
+    EXPECT_EQ("parent_model",
+              _include.AbsoluteParentName());
+    return this->customTomlParser(_include, _errors);
+  };
+
+  this->config.RegisterCustomModelParser(checkParentNameParser);
+
+  const std::string testSdf = R"(
+  <sdf version="1.10">
+    <model name="parent_model">
+      <include merge="true">
+        <uri>merge_include_with_interface_api_1.sdf</uri>
+        <pose>0 10 0   0 0 0</pose>
+      </include>
+    </model>
+  </sdf>)";
+
+  sdf::Root root;
+  sdf::Errors errors = root.LoadSdfString(testSdf, this->config);
+  EXPECT_TRUE(errors.empty()) << errors;
+  const auto* parentModel = root.Model();
+  ASSERT_NE(nullptr, parentModel);
+  using gz::math::Pose3d;
+  EXPECT_EQ(Pose3d(0, 10, 10, 0, 0, 0),
+            resolvePoseNoErrors(parentModel->SemanticPose(),
+                                "parent_model::double_pendulum")
+                .Inverse());
+}
+
+/////////////////////////////////////////////////
+TEST_F(InterfaceAPIMergeInclude, DeeplyNestedMergeInclude2)
+{
+  auto checkParentNameParser =
+      [this](const sdf::NestedInclude &_include, sdf::Errors &_errors)
+  {
+    EXPECT_EQ("parent_model", _include.AbsoluteParentName());
+    return this->customTomlParser(_include, _errors);
+  };
+
+  this->config.RegisterCustomModelParser(checkParentNameParser);
+
+  const std::string testSdf = R"(
+  <sdf version="1.10">
+    <model name="parent_model">
+      <include merge="true">
+        <uri>merge_include_with_interface_api_2.sdf</uri>
+        <pose>0 10 0   0 0 0</pose>
+      </include>
+    </model>
+  </sdf>)";
+
+  sdf::Root root;
+  sdf::Errors errors = root.LoadSdfString(testSdf, this->config);
+  EXPECT_TRUE(errors.empty()) << errors;
+  const auto* parentModel = root.Model();
+  ASSERT_NE(nullptr, parentModel);
+  using gz::math::Pose3d;
+  EXPECT_EQ(
+      Pose3d(1, 10, 10.5, 0, 0, 0),
+      resolvePoseNoErrors(parentModel->SemanticPose(), "parent_model::base")
+          .Inverse());
+}
+
+/////////////////////////////////////////////////
+TEST_F(InterfaceAPIMergeInclude, DeeplyNestedMergeIncludePlacementFrame)
+{
+  this->config.RegisterCustomModelParser(this->customTomlParser);
+
+  const std::string testSdf = R"(
+  <sdf version="1.10">
+    <model name="parent_model">
+      <include merge="true">
+        <uri>merge_include_with_interface_api_1.sdf</uri>
+        <placement_frame>double_pendulum::lower_link</placement_frame>
+        <pose>0 10 0   0 0 0</pose>
+      </include>
+    </model>
+  </sdf>)";
+
+  sdf::Root root;
+  sdf::Errors errors = root.LoadSdfString(testSdf, this->config);
+  EXPECT_TRUE(errors.empty()) << errors;
+  const auto* parentModel = root.Model();
+  ASSERT_NE(nullptr, parentModel);
+  using gz::math::Pose3d;
+  EXPECT_EQ(Pose3d(0, 10, 0, 0, 0, 0),
+            resolvePoseNoErrors(parentModel->SemanticPose(),
+                                "parent_model::double_pendulum::lower_link")
+                .Inverse());
 }
 
 /////////////////////////////////////////////////

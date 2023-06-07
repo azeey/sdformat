@@ -231,6 +231,17 @@ static void insertIncludedElement(sdf::SDFPtr _includeSDF,
     return;
   }
 
+  if (!_config.CustomModelParsers().empty())
+  {
+    // Since we have custom parsers, we can't create a throwaway sdf::Root 
+    // object to validate the merge-included model.
+    // TODO(azeey) Expound
+    firstElem->AddAttribute("merge", "bool", "false", false,
+                            "Indicates whether this is a merge included model");
+    firstElem->GetAttribute("merge")->Set<bool>(true);
+    _parent->InsertElement(firstElem, true);
+    return;
+  }
   // Validate included model's frame semantics
   // We create a throwaway sdf::Root object in order to validate the
   // included entity.
