@@ -14,6 +14,7 @@
  * limitations under the License.
  *
 */
+#include <iostream>
 #include <string>
 #include <variant>
 #include <vector>
@@ -631,4 +632,23 @@ sdf::ElementPtr Root::ToElement(const OutputConfig &_config) const
   }
 
   return elem;
+}
+
+void Root::PrintGraphs() const {
+  if (this->Model())
+  {
+    std::cout << this->dataPtr->modelFrameAttachedToGraph.Graph() << std::endl;
+    std::cout << this->dataPtr->modelPoseRelativeToGraph.Graph() << std::endl;
+  }
+  else
+  {
+    for (const auto &graph: this->dataPtr->worldFrameAttachedToGraphs)
+    {
+      std::cout << graph.Graph() << std::endl;
+    }
+    for (const auto &graph: this->dataPtr->worldPoseRelativeToGraphs)
+    {
+      std::cout << graph.Graph() << std::endl;
+    }
+  }
 }

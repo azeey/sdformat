@@ -240,6 +240,7 @@ namespace sdf
     public: sdf::ElementPtr ToElement(
         const OutputConfig &_config = OutputConfig::GlobalConfig()) const;
 
+    public: void PrintGraphs() const;
     /// \brief Private data pointer
     GZ_UTILS_IMPL_PTR(dataPtr)
   };
