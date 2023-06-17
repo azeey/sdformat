@@ -200,6 +200,15 @@ namespace sdf
     return errors;
   }
 
+  template <typename Class, typename... Args>
+  Class loadSingle(sdf::Errors &_errors, sdf::ElementPtr _elem, Args &&..._args)
+  {
+    Class obj;
+    Errors loadErrors = obj.Load(_elem, std::forward<Args>(_args)...);
+    _errors.insert(_errors.end(), loadErrors.begin(), loadErrors.end());
+    return obj;
+  }
+
   /// \brief Load interface models from //include tags.
   /// \param[in] _sdf sdf::ElementPtr that contains the //include tags.
   /// \param[in] _config Parser configuration options.

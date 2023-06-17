@@ -30,6 +30,8 @@
 #include "sdf/Frame.hh"
 #include "sdf/InterfaceElements.hh"
 #include "sdf/InterfaceModel.hh"
+#include "sdf/Joint.hh"
+#include "sdf/Link.hh"
 #include "sdf/Model.hh"
 #include "sdf/Param.hh"
 #include "sdf/PrintConfig.hh"
@@ -1316,6 +1318,7 @@ TEST_F(InterfaceAPIMergeInclude, DeeplyNestedMergeInclude1a)
   const std::string testSdf = R"(
   <sdf version="1.10">
     <model name="parent_model">
+      <link name="link1"/>
       <include>
         <uri>merge_include_with_interface_api_1.sdf</uri>
         <pose>0 10 0   0 0 0</pose>
@@ -1458,7 +1461,6 @@ TEST_F(InterfaceAPIMergeInclude, DeeplyNestedMergeIncludeInWorld)
   sdf::Root root;
   sdf::Errors errors = root.LoadSdfString(testSdf, this->config);
   EXPECT_TRUE(errors.empty()) << errors;
-  root.PrintGraphs();
   const auto *world = root.WorldByIndex(0);
   ASSERT_NE(nullptr, world);
   EXPECT_EQ(nullptr, world->ModelByName("intermediate_model"));
@@ -1468,6 +1470,96 @@ TEST_F(InterfaceAPIMergeInclude, DeeplyNestedMergeIncludeInWorld)
   EXPECT_EQ(Pose3d(0, 10, 10, 0, 0, 0),
             resolvePoseNoErrors(worldFrame->SemanticPose(), "double_pendulum")
                 .Inverse());
+}
+
+/////////////////////////////////////////////////
+TEST_F(InterfaceAPIMergeInclude, DeeplyNestedMergeIncludeElementOrder)
+{
+  auto checkParentNameParser =
+      [this](const sdf::NestedInclude &_include, sdf::Errors &_errors)
+  {
+    return this->customTomlParser(_include, _errors);
+  };
+
+  this->config.RegisterCustomModelParser(checkParentNameParser);
+
+  const std::string testSdf = R"(
+  <sdf version="1.10">
+    <model name="parent_model">
+      <link name="L0"/>
+      <frame name="F0"/>
+      <joint name="J0" type="fixed">
+        <parent>world</parent>
+        <child>L0</child>
+      </joint>
+      <include merge="true">
+        <uri>test_model_with_frames</uri>
+      </include>
+      <include>
+        <uri>merge_include_with_interface_api_1.sdf</uri>
+        <pose>0 10 0   0 0 0</pose>
+      </include>
+    </model>
+  </sdf>)";
+
+  sdf::Root root;
+  sdf::Errors errors = root.LoadSdfString(testSdf, this->config);
+  EXPECT_TRUE(errors.empty()) << errors;
+  const auto* parentModel = root.Model();
+  ASSERT_NE(nullptr, parentModel);
+  EXPECT_NE(nullptr, parentModel->ModelByName("M2"));
+  EXPECT_NE(nullptr, parentModel->ModelByName("intermediate_model"));
+  ASSERT_GE(parentModel->LinkCount(), 2u);
+  EXPECT_EQ("L0", parentModel->LinkByIndex(0)->Name());
+  EXPECT_EQ("L1", parentModel->LinkByIndex(1)->Name());
+  EXPECT_NE(nullptr, parentModel->CanonicalLinkAndRelativeName().first);
+  EXPECT_EQ("L0", parentModel->CanonicalLinkAndRelativeName().second);
+  ASSERT_GE(parentModel->FrameCount(), 1u);
+  EXPECT_EQ("F0", parentModel->FrameByIndex(0)->Name());
+  ASSERT_GE(parentModel->JointCount(), 1u);
+  EXPECT_EQ("J0", parentModel->JointByIndex(0)->Name());
+}
+
+/////////////////////////////////////////////////
+TEST_F(InterfaceAPIMergeInclude, DeeplyNestedMergeIncludeElementOrderInWorld)
+{
+  auto checkParentNameParser =
+      [this](const sdf::NestedInclude &_include, sdf::Errors &_errors)
+  {
+    return this->customTomlParser(_include, _errors);
+  };
+
+  this->config.RegisterCustomModelParser(checkParentNameParser);
+
+  const std::string testSdf = R"(
+  <sdf version="1.10">
+    <world name="default">
+      <frame name="F0"/>
+      <joint name="J0" type="fixed">
+        <parent>world</parent>
+        <child>M1</child>
+      </joint>
+      <include merge="true">
+        <uri>model_for_world_merge_include.sdf</uri>
+      </include>
+      <include>
+        <uri>merge_include_with_interface_api_1.sdf</uri>
+        <pose>0 10 0   0 0 0</pose>
+      </include>
+    </world>
+  </sdf>)";
+
+  sdf::Root root;
+  sdf::Errors errors = root.LoadSdfString(testSdf, this->config);
+  EXPECT_TRUE(errors.empty()) << errors;
+  const auto* world = root.WorldByIndex(0);
+  ASSERT_NE(nullptr, world);
+  EXPECT_NE(nullptr, world->ModelByName("M1"));
+  EXPECT_NE(nullptr, world->ModelByName("intermediate_model"));
+  ASSERT_GE(world->FrameCount(), 1u);
+  EXPECT_EQ("F0", world->FrameByIndex(0)->Name());
+  ASSERT_GE(world->JointCount(), 1u);
+  EXPECT_EQ("J0", world->JointByIndex(0)->Name());
 }
 
 /////////////////////////////////////////////////
