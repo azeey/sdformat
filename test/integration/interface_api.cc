@@ -1328,6 +1328,7 @@ TEST_F(InterfaceAPIMergeInclude, DeeplyNestedMergeInclude1a)
   EXPECT_TRUE(errors.empty()) << errors;
   const auto* parentModel = root.Model();
   ASSERT_NE(nullptr, parentModel);
+  EXPECT_NE(nullptr, parentModel->ModelByName("intermediate_model"));
   using gz::math::Pose3d;
   EXPECT_EQ(
       Pose3d(0, 10, 10, 0, 0, 0),
@@ -1364,6 +1365,7 @@ TEST_F(InterfaceAPIMergeInclude, DeeplyNestedMergeInclude1b)
   EXPECT_TRUE(errors.empty()) << errors;
   const auto* parentModel = root.Model();
   ASSERT_NE(nullptr, parentModel);
+  EXPECT_EQ(nullptr, parentModel->ModelByName("intermediate_model"));
   using gz::math::Pose3d;
   EXPECT_EQ(Pose3d(0, 10, 10, 0, 0, 0),
             resolvePoseNoErrors(parentModel->SemanticPose(),
@@ -1430,6 +1432,41 @@ TEST_F(InterfaceAPIMergeInclude, DeeplyNestedMergeIncludePlacementFrame)
   EXPECT_EQ(Pose3d(0, 10, 0, 0, 0, 0),
             resolvePoseNoErrors(parentModel->SemanticPose(),
                                 "parent_model::double_pendulum::lower_link")
+                .Inverse());
+}
+
+/////////////////////////////////////////////////
+TEST_F(InterfaceAPIMergeInclude, DeeplyNestedMergeIncludeInWorld)
+{
+  auto checkParentNameParser =
+      [this](const sdf::NestedInclude &_include, sdf::Errors &_errors)
+  { return this->customTomlParser(_include, _errors); };
+
+  this->config.RegisterCustomModelParser(checkParentNameParser);
+
+  const std::string testSdf = R"(
+  <sdf version="1.10">
+    <world name="merge_world">
+      <include merge="true">
+        <uri>merge_include_with_interface_api_1.sdf</uri>
+        <pose>0 10 0   0 0 0</pose>
+      </include>
+      <frame name="world_frame"/>
+    </world>
+  </sdf>)";
+
+  sdf::Root root;
+  sdf::Errors errors = root.LoadSdfString(testSdf, this->config);
+  EXPECT_TRUE(errors.empty()) << errors;
+  root.PrintGraphs();
+  const auto *world = root.WorldByIndex(0);
+  ASSERT_NE(nullptr, world);
+  EXPECT_EQ(nullptr, world->ModelByName("intermediate_model"));
+  const auto *worldFrame = world->FrameByName("world_frame");
+  ASSERT_NE(nullptr, worldFrame);
+  using gz::math::Pose3d;
+  EXPECT_EQ(Pose3d(0, 10, 10, 0, 0, 0),
+            resolvePoseNoErrors(worldFrame->SemanticPose(), "double_pendulum")
                 .Inverse());
 }
 

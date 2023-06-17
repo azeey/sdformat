@@ -219,10 +219,14 @@ Errors Model::Load(sdf::ElementPtr _sdf, const ParserConfig &_config)
     }
   }
 
+  // Set of implicit and explicit frame names in this model for tracking
+  // name collisions
+  std::unordered_set<std::string> frameNames;
+
   // Create a scope for `loadedModels` so it's not used later accidentally.
   {
-    std::vector<Model> loadedModels;
     // Load nested models.
+    std::vector<Model> loadedModels;
     Errors nestedModelLoadErrors = loadUniqueRepeated<Model>(_sdf, "model",
         loadedModels, _config);
     errors.insert(errors.end(),
@@ -244,10 +248,6 @@ Errors Model::Load(sdf::ElementPtr _sdf, const ParserConfig &_config)
     }
   }
 
-  // Set of implicit and explicit frame names in this model for tracking
-  // name collisions
-  std::unordered_set<std::string> frameNames;
-
   // Nested models are loaded first, and loadUniqueRepeated ensures there are no
   // duplicate names, so these names can be added to frameNames without
   // checking uniqueness.
@@ -258,7 +258,7 @@ Errors Model::Load(sdf::ElementPtr _sdf, const ParserConfig &_config)
 
   // Load InterfaceModels into a temporary container so we can have special
   // handling for merged InterfaceModels.
-  std::vector<std::pair<sdf::NestedInclude, sdf::InterfaceModelPtr>>
+  std::vector<std::pair<sdf::NestedInclude, sdf::InterfaceModelConstPtr>>
       tmpInterfaceModels;
   // Load included models via the interface API
   Errors interfaceModelLoadErrors = loadIncludedInterfaceModels(
@@ -1198,6 +1198,11 @@ void Model::AddPlugin(const Plugin &_plugin)
   this->dataPtr->plugins.push_back(_plugin);
 }
 
+/////////////////////////////////////////////////
+bool Model::IsMerged() const
+{
+  return this->dataPtr->isMerged;
+}
 
 /////////////////////////////////////////////////
 void Model::MergeModel(sdf::Errors &_errors, Model &_srcModel)

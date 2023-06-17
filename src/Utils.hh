@@ -207,7 +207,7 @@ namespace sdf
   /// \return Errors encountered.
   sdf::Errors loadIncludedInterfaceModels(sdf::ElementPtr _sdf,
       const sdf::ParserConfig &_config,
-      std::vector<std::pair<NestedInclude, InterfaceModelPtr>> &_models);
+      std::vector<std::pair<NestedInclude, InterfaceModelConstPtr>> &_models);
 
   /// \brief Convenience function that returns a pointer to the value contained
   /// in a std::optional.

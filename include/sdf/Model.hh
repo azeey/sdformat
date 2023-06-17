@@ -529,6 +529,8 @@ namespace sdf
     private: const std::vector<std::pair<std::optional<sdf::NestedInclude>,
              sdf::InterfaceModelConstPtr>> &MergedInterfaceModels() const;
 
+    private: bool IsMerged() const;
+
     private: void MergeModel(sdf::Errors &_errors, Model &_srcModel);
 
     /// \brief Allow Root::Load, World::SetPoseRelativeToGraph, or

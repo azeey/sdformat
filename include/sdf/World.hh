@@ -530,6 +530,8 @@ namespace sdf
     private: void SetFrameAttachedToGraph(
         sdf::ScopedGraph<FrameAttachedToGraph> _graph);
 
+    private: void MergeModel(sdf::Errors &_errors, Model &_srcModel);
+
     /// \brief Allow Root::Load to call SetPoseRelativeToGraph and
     /// SetFrameAttachedToGraph
     friend class Root;

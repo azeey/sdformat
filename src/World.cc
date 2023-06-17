@@ -26,6 +26,7 @@
 #include "sdf/InterfaceModel.hh"
 #include "sdf/InterfaceModelPoseGraph.hh"
 #include "sdf/Joint.hh"
+#include "sdf/JointAxis.hh"
 #include "sdf/Light.hh"
 #include "sdf/Model.hh"
 #include "sdf/ParserConfig.hh"
@@ -87,8 +88,8 @@ class sdf::World::Implementation
   public: std::vector<Model> models;
 
   /// \brief The interface models specified in this world.
-  public: std::vector<std::pair<sdf::NestedInclude, sdf::InterfaceModelPtr>>
-      interfaceModels;
+  public: std::vector<std::pair<sdf::NestedInclude,
+          sdf::InterfaceModelConstPtr>> interfaceModels;
 
   /// \brief Name of the world.
   public: std::string name = "";
@@ -225,9 +226,23 @@ Errors World::Load(sdf::ElementPtr _sdf, const ParserConfig &_config)
   std::unordered_set<std::string> frameNames;
 
   // Load all the models.
+  std::vector<Model> loadedModels;
   Errors modelLoadErrors =
-      loadUniqueRepeated<Model>(_sdf, "model", this->dataPtr->models, _config);
+      loadUniqueRepeated<Model>(_sdf, "model", loadedModels, _config);
   errors.insert(errors.end(), modelLoadErrors.begin(), modelLoadErrors.end());
+  for (auto &model: loadedModels)
+  {
+    if (model.IsMerged())
+    {
+      this->MergeModel(errors, model);
+    }
+    else
+    {
+      // It should be okay to move the model because the model will not be
+      // used outside of this scope.
+      this->dataPtr->models.push_back(std::move(model));
+    }
+  }
 
   // Models are loaded first, and loadUniqueRepeated ensures there are no
   // duplicate names, so these names can be added to frameNames without
@@ -1182,4 +1197,136 @@ void World::ClearPlugins()
 void World::AddPlugin(const Plugin &_plugin)
 {
   this->dataPtr->plugins.push_back(_plugin);
+}
+
+/////////////////////////////////////////////////
+void World::MergeModel(sdf::Errors &_errors, Model &_srcModel)
+{
+  // Build the pose graph of the model so we can adjust the pose of the proxy
+  // frame to take the placement frame into account.
+  auto poseGraph = std::make_shared<sdf::PoseRelativeToGraph>();
+  sdf::ScopedGraph<sdf::PoseRelativeToGraph> scopedPoseGraph(poseGraph);
+  sdf::Errors poseGraphErrors =
+      sdf::buildPoseRelativeToGraph(scopedPoseGraph, &_srcModel);
+  _errors.insert(_errors.end(), poseGraphErrors.begin(), poseGraphErrors.end());
+  sdf::Errors poseValidationErrors =
+      validatePoseRelativeToGraph(scopedPoseGraph);
+  _errors.insert(_errors.end(), poseValidationErrors.begin(),
+                 poseValidationErrors.end());
+
+  auto frameGraph = std::make_shared<sdf::FrameAttachedToGraph>();
+  sdf::ScopedGraph<sdf::FrameAttachedToGraph> scopedFrameGraph(frameGraph);
+  sdf::Errors frameGraphErrors =
+      sdf::buildFrameAttachedToGraph(scopedFrameGraph, &_srcModel);
+  _errors.insert(_errors.end(), frameGraphErrors.begin(),
+                 frameGraphErrors.end());
+  sdf::Errors frameValidationErrors =
+      validateFrameAttachedToGraph(scopedFrameGraph);
+  _errors.insert(_errors.end(), frameValidationErrors.begin(),
+                 frameValidationErrors.end());
+
+  const std::string proxyModelFrameName =
+      computeMergedModelProxyFrameName(_srcModel.Name());
+
+  sdf::Frame proxyFrame;
+  proxyFrame.SetName(proxyModelFrameName);
+  proxyFrame.SetAttachedTo(_srcModel.CanonicalLinkAndRelativeName().second);
+  gz::math::Pose3d modelPose = _srcModel.RawPose();
+  if (!_srcModel.PlacementFrameName().empty())
+  {
+    // Build the pose graph of the model so we can adjust the pose of the proxy
+    // frame to take the placement frame into account.
+    if (poseGraphErrors.empty())
+    {
+      // M - model frame (__model__)
+      // R - The `relative_to` frame of the placement frame's //pose element.
+      // See resolveModelPoseWithPlacementFrame in FrameSemantics.cc for
+      // notation and documentation
+      gz::math::Pose3d X_RL = _srcModel.RawPose();
+      gz::math::Pose3d X_LM;
+      sdf::Errors resolveErrors = sdf::resolvePose(
+          X_LM, scopedPoseGraph.ChildModelScope(_srcModel.Name()), "__model__",
+          _srcModel.PlacementFrameName());
+      _errors.insert(_errors.end(), resolveErrors.begin(), resolveErrors.end());
+      modelPose = X_RL * X_LM;
+    }
+  }
+
+  proxyFrame.SetRawPose(modelPose);
+  proxyFrame.SetPoseRelativeTo(_srcModel.PoseRelativeTo().empty()
+                                   ? "world"
+                                   : _srcModel.PoseRelativeTo());
+  this->AddFrame(proxyFrame);
+
+  auto isEmptyOrModelFrame = [](const std::string &_attr)
+  {
+    return _attr.empty() || _attr == "__model__";
+  };
+
+  for (uint64_t fi = 0; fi < _srcModel.FrameCount(); ++fi)
+  {
+    sdf::Frame frame = *_srcModel.FrameByIndex(fi);
+    if (isEmptyOrModelFrame(frame.AttachedTo()))
+    {
+      frame.SetAttachedTo(proxyModelFrameName);
+    }
+    if (frame.PoseRelativeTo() == "__model__")
+    {
+      frame.SetPoseRelativeTo(proxyModelFrameName);
+    }
+    this->dataPtr->frames.push_back(std::move(frame));
+  }
+
+  for (uint64_t ji = 0; ji < _srcModel.JointCount(); ++ji)
+  {
+    sdf::Joint joint = *_srcModel.JointByIndex(ji);
+    if (joint.PoseRelativeTo() == "__model__")
+    {
+      joint.SetPoseRelativeTo(proxyModelFrameName);
+    }
+    if (joint.ParentName() == "__model__")
+    {
+      joint.SetParentName(proxyModelFrameName);
+    }
+    if (joint.ChildName() == "__model__")
+    {
+      joint.SetChildName(proxyModelFrameName);
+    }
+    for (unsigned int ai : {0, 1})
+    {
+      const sdf::JointAxis *axis = joint.Axis(ai);
+      if (axis && axis->XyzExpressedIn() == "__model__")
+      {
+        sdf::JointAxis axisCopy = *axis;
+        axisCopy.SetXyzExpressedIn(proxyModelFrameName);
+        joint.SetAxis(ai, axisCopy);
+      }
+    }
+    this->dataPtr->joints.push_back(std::move(joint));
+  }
+
+  for (uint64_t mi = 0; mi < _srcModel.ModelCount(); ++mi)
+  {
+    sdf::Model nestedModel = *_srcModel.ModelByIndex(mi);
+    if (isEmptyOrModelFrame(nestedModel.PoseRelativeTo()))
+    {
+      nestedModel.SetPoseRelativeTo(proxyModelFrameName);
+    }
+    this->dataPtr->models.push_back(std::move(nestedModel));
+  }
+
+  for (uint64_t imi = 0; imi < _srcModel.InterfaceModelCount(); ++imi)
+  {
+    InterfaceModelConstPtr ifaceModel = _srcModel.InterfaceModelByIndex(imi);
+    NestedInclude nestedInclude =
+        *_srcModel.InterfaceModelNestedIncludeByIndex(imi);
+    if (isEmptyOrModelFrame(nestedInclude.IncludePoseRelativeTo().value_or("")))
+    {
+      nestedInclude.SetIncludePoseRelativeTo(proxyModelFrameName);
+    }
+    this->dataPtr->interfaceModels.emplace_back(std::move(nestedInclude),
+                                                ifaceModel);
+  }
+
+  // TODO (azeey) Support Merge-included interface models.
 }
