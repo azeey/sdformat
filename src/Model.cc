@@ -128,6 +128,8 @@ class sdf::Model::Implementation
   /// <include> tag when the ToElementUseIncludeTag policy is true..
   public: std::vector<Plugin> includePlugins;
 
+  /// \brief Whether the model was merge-included and needs to be processed to
+  /// carry out the merge.
   public: bool isMerged{false};
 };
 
@@ -185,6 +187,9 @@ Errors Model::Load(sdf::ElementPtr _sdf, const ParserConfig &_config)
       this->dataPtr->canonicalLink = pair.first;
     }
   }
+
+  // Note: this attribute is not defined in the spec. It is used internally for
+  // implementing merge-includes when custom parsers are present.
   this->dataPtr->isMerged =
     _sdf->Get<bool>("merge", this->dataPtr->isMerged).first;
 
@@ -297,15 +302,13 @@ Errors Model::Load(sdf::ElementPtr _sdf, const ParserConfig &_config)
       {
         continue;
       }
-      implicitFrameNames.insert(model.Name());
       if (model.IsMerged())
       {
         this->MergeModel(errors, model);
-        // TODO(azeey) Do we need to consider the frame names that were merged
-        // into the model?
       }
       else
       {
+        implicitFrameNames.insert(model.Name());
         this->dataPtr->models.push_back(std::move(model));
       }
     }
@@ -1238,6 +1241,9 @@ void Model::MergeModel(sdf::Errors &_errors, Model &_srcModel)
   _errors.insert(_errors.end(), frameValidationErrors.begin(),
                  frameValidationErrors.end());
 
+  _srcModel.SetPoseRelativeToGraph(scopedPoseGraph);
+  _srcModel.SetFrameAttachedToGraph(scopedFrameGraph);
+
   const std::string proxyModelFrameName =
       computeMergedModelProxyFrameName(_srcModel.Name());
 
@@ -1255,13 +1261,11 @@ void Model::MergeModel(sdf::Errors &_errors, Model &_srcModel)
       // R - The `relative_to` frame of the placement frame's //pose element.
       // See resolveModelPoseWithPlacementFrame in FrameSemantics.cc for
       // notation and documentation
-      gz::math::Pose3d X_RL = _srcModel.RawPose();
-      gz::math::Pose3d X_LM;
-      sdf::Errors resolveErrors = sdf::resolvePose(
-          X_LM, scopedPoseGraph.ChildModelScope(_srcModel.Name()), "__model__",
-          _srcModel.PlacementFrameName());
+      // TODO(azeey) Explain how framegraph already accounts for placement_frame
+      gz::math::Pose3d X_RM = _srcModel.RawPose();
+      sdf::Errors resolveErrors = _srcModel.SemanticPose().Resolve(X_RM);
       _errors.insert(_errors.end(), resolveErrors.begin(), resolveErrors.end());
-      modelPose = X_RL * X_LM;
+      modelPose = X_RM;
     }
   }
 
@@ -1282,10 +1286,6 @@ void Model::MergeModel(sdf::Errors &_errors, Model &_srcModel)
   };
 
   // Merge links, frames, joints, and nested models.
-  // TODO(azeey) The order of the links in the parent model will not reflect
-  // the order one would expect from reading the SDFormat file because
-  // we are processing all nested models here and merging their links before
-  // processing the links of the parent model.
   for (auto &link : _srcModel.dataPtr->links)
   {
     if (isEmptyOrModelFrame(link.PoseRelativeTo()))
@@ -1308,7 +1308,7 @@ void Model::MergeModel(sdf::Errors &_errors, Model &_srcModel)
   }
   moveElements(_srcModel.dataPtr->frames, this->dataPtr->frames);
 
-  for (auto &joint: _srcModel.dataPtr->joints)
+  for (auto &joint : _srcModel.dataPtr->joints)
   {
     if (joint.PoseRelativeTo() == "__model__")
     {
@@ -1335,7 +1335,7 @@ void Model::MergeModel(sdf::Errors &_errors, Model &_srcModel)
   }
   moveElements(_srcModel.dataPtr->joints, this->dataPtr->joints);
 
-  for (auto &nestedModel: _srcModel.dataPtr->models)
+  for (auto &nestedModel : _srcModel.dataPtr->models)
   {
     if (isEmptyOrModelFrame(nestedModel.PoseRelativeTo()))
     {
@@ -1343,6 +1343,9 @@ void Model::MergeModel(sdf::Errors &_errors, Model &_srcModel)
     }
   }
   moveElements(_srcModel.dataPtr->models, this->dataPtr->models);
+  // Note: Since Model::Load is called recursively, all merge-include nested
+  // models would already have been merged by this point, so there is no need
+  // to call MergeModel recursively here.
 
   for (auto &ifaceModel : _srcModel.dataPtr->interfaceModels)
   {

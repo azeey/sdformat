@@ -267,8 +267,6 @@ Errors World::Load(sdf::ElementPtr _sdf, const ParserConfig &_config)
       if (model.IsMerged())
       {
         this->MergeModel(errors, model);
-        // TODO(azeey) Do we need to consider the frame names that were merged
-        // into the model?
       }
       else
       {
@@ -1336,6 +1334,9 @@ void World::MergeModel(sdf::Errors &_errors, Model &_srcModel)
       nestedModel.SetPoseRelativeTo(proxyModelFrameName);
     }
     this->dataPtr->models.push_back(std::move(nestedModel));
+    // Note: Since Model::Load is called recursively, all merge-include nested
+    // models would already have been merged by this point, so there is no need
+    // to call MergeModel recursively here.
   }
 
   for (uint64_t imi = 0; imi < _srcModel.InterfaceModelCount(); ++imi)
@@ -1351,5 +1352,6 @@ void World::MergeModel(sdf::Errors &_errors, Model &_srcModel)
                                                 ifaceModel);
   }
 
-  // TODO (azeey) Support Merge-included interface models.
+  // TODO(azeey) Support Merge-included interface models when `World` supports
+  // them.
 }

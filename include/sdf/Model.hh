@@ -529,8 +529,17 @@ namespace sdf
     private: const std::vector<std::pair<std::optional<sdf::NestedInclude>,
              sdf::InterfaceModelConstPtr>> &MergedInterfaceModels() const;
 
+    /// \brief Get whether the model was merge-included and needs to be
+    /// processed to carry out the merge.
+    /// \return True if the model was merge-included.
     private: bool IsMerged() const;
 
+    /// \brief Perform the process of merging the contents of a source model
+    /// into this model.
+    /// \param[out] _errors A list of errors encountered during the operation.
+    /// \param[inout] _srcModel The source model, the contents of which will be
+    /// moved to this model. _srcModel will be empty if this function completes
+    /// successfully.
     private: void MergeModel(sdf::Errors &_errors, Model &_srcModel);
 
     /// \brief Allow Root::Load, World::SetPoseRelativeToGraph, or

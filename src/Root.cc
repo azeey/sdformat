@@ -245,7 +245,6 @@ Errors Root::Load(SDFPtr _sdf, const ParserConfig &_config)
 {
   Errors errors;
 
-  // std::cout << _sdf->Root()->ToString("") << std::endl;
   this->dataPtr->sdf = _sdf->Root();
 
   // Get the SDF version.
