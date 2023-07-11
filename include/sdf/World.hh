@@ -536,6 +536,14 @@ namespace sdf
     private: void SetFrameAttachedToGraph(
         sdf::ScopedGraph<FrameAttachedToGraph> _graph);
 
+    /// \brief Perform the process of merging the contents of a source model
+    /// into this world.
+    /// \param[out] _errors A list of errors encountered during the operation.
+    /// \param[inout] _srcModel The source model, the contents of which will be
+    /// moved to this world. _srcModel will be empty if this function completes
+    /// successfully.
+    private: void MergeModel(sdf::Errors &_errors, Model &_srcModel);
+
     /// \brief Allow Root::Load to call SetPoseRelativeToGraph and
     /// SetFrameAttachedToGraph
     friend class Root;
