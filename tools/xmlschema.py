@@ -247,6 +247,9 @@ def print_xsd(element: ElementTree.Element, sdf_root_dir: str) -> List[str]:
     if len(elements) or len(attributes) or len(includes):
         lines.append(f"<xsd:element name='{elem_name}'>")
         lines.append("  <xsd:complexType>")
+        if len(elements) == 0 and elem_type:
+            lines.append("  <xsd:simpleContent>")
+            lines.append(f"   <xsd:extension base='{elem_type}'>")
 
         if elem_name != "plugin" and (len(elements) or len(includes)):
             lines.append("    <xsd:choice maxOccurs='unbounded'>")
@@ -269,6 +272,9 @@ def print_xsd(element: ElementTree.Element, sdf_root_dir: str) -> List[str]:
         for attribute_element in attributes:
             lines.extend(indent_lines(print_attribute(attribute_element), 4))
 
+        if len(elements) == 0 and elem_type:
+            lines.append("    </xsd:extension>")
+            lines.append("  </xsd:simpleContent>")
         lines.append("  </xsd:complexType>")
         lines.append("</xsd:element>")
     else:
